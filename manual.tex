@@ -1,0 +1,364 @@
+% ============================================================
+%  Manual do Usuário — Remote Firmware Flasher
+%  Compilar com: tectonic manual.tex
+% ============================================================
+\documentclass[12pt,a4paper]{article}
+
+% --- Codificação e língua ----------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+
+% --- Tipografia --------------------------------------------------
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% --- Layout ------------------------------------------------------
+\usepackage[
+  top=2.5cm, bottom=2.5cm,
+  left=2.8cm, right=2.8cm,
+  headheight=15pt
+]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{parskip}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\usepackage{enumitem}
+
+% --- Cor e links -------------------------------------------------
+\usepackage{xcolor}
+\definecolor{azulescuro}{RGB}{15,52,120}
+\definecolor{azulmedio}{RGB}{40,100,180}
+\definecolor{azulclaro}{RGB}{220,235,250}
+\definecolor{cinzatexto}{RGB}{80,80,80}
+\definecolor{amarelodest}{RGB}{255,243,205}
+\definecolor{amarelob}{RGB}{180,130,0}
+
+\usepackage[
+  colorlinks=true,
+  linkcolor=azulmedio,
+  urlcolor=azulmedio,
+  citecolor=azulmedio
+]{hyperref}
+
+% --- Tabelas -----------------------------------------------------
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{colortbl}
+\usepackage{tabularx}
+
+% --- Caixas e destaques ------------------------------------------
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+
+\newtcolorbox{notabox}[1][Nota]{
+  colback=amarelodest, colframe=amarelob,
+  fonttitle=\bfseries\small, title=#1,
+  left=4pt, right=4pt, top=3pt, bottom=3pt,
+  breakable
+}
+
+\newtcolorbox{codigobox}{
+  colback=gray!10, colframe=gray!40,
+  fontupper=\ttfamily\small,
+  left=8pt, right=4pt, top=4pt, bottom=4pt,
+  breakable
+}
+
+% --- Código ------------------------------------------------------
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{azulmedio}\bfseries,
+  backgroundcolor=\color{gray!8},
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  showstringspaces=false
+}
+
+% --- Cabeçalho e rodapé ------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{cinzatexto}Remote Firmware Flasher}
+\fancyhead[R]{\small\color{cinzatexto}Manual do Usuário}
+\fancyfoot[C]{\small\color{cinzatexto}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{azulmedio}\leaders\hrule height \headrulewidth\hfill}}
+
+% --- Títulos de seção --------------------------------------------
+\titleformat{\section}
+  {\Large\bfseries\color{azulescuro}}
+  {\thesection.}{0.6em}{}
+  [\color{azulmedio}\rule{\linewidth}{1.2pt}]
+
+\titleformat{\subsection}
+  {\large\bfseries\color{azulmedio}}
+  {\thesubsection}{0.6em}{}
+
+% ================================================================
+\begin{document}
+
+% --- Capa --------------------------------------------------------
+\begin{titlepage}
+  \pagecolor{azulescuro}
+  \color{white}
+  \vspace*{2cm}
+
+  \begin{center}
+    {\fontsize{11}{13}\selectfont\scshape Residência Tecnológica --- UFPE/CIn}\\[0.8cm]
+    \rule{\linewidth}{1.5pt}\\[0.6cm]
+    {\fontsize{28}{34}\selectfont\bfseries Remote Firmware\\Flasher}\\[0.4cm]
+    \rule{\linewidth}{1.5pt}\\[0.8cm]
+    {\fontsize{15}{18}\selectfont Manual do Usuário}\\[0.3cm]
+    {\fontsize{12}{15}\selectfont\color{azulclaro}%
+      Sistemas Operacionais de Tempo Real}\\[2.5cm]
+  \end{center}
+
+  \begin{tcolorbox}[
+    colback=white, colframe=white,
+    coltext=azulescuro,
+    width=0.75\textwidth,
+    center, arc=3pt,
+    left=10pt, right=10pt, top=6pt, bottom=6pt
+  ]
+    \small
+    \begin{tabular}{@{}ll@{}}
+      \textbf{Versão}          & 1.0 \\
+      \textbf{Data}            & Março de 2026 \\
+      \textbf{Repositório}     & \texttt{renatosfagundes/remote-flasher} \\
+      \textbf{Plataforma}      & Windows 10/11 \\
+    \end{tabular}
+  \end{tcolorbox}
+
+  \vfill
+  {\small\itshape Gerado por \texttt{manual.tex} --- Compilado com Tectonic}
+\end{titlepage}
+\pagecolor{white}
+\color{black}
+
+% --- Sumário -----------------------------------------------------
+\tableofcontents
+\newpage
+
+% === 1. Introdução ===============================================
+\section{Introdução}
+
+O \textbf{Remote Firmware Flasher} é uma aplicação desktop (PySide6) que permite programar placas Arduino remotamente, através de conexão VPN e SSH. Foi desenvolvido para a Residência Tecnológica do CIn/UFPE, permitindo que alunos gravem firmware nas placas do laboratório sem precisar estar fisicamente presente.
+
+\subsection{Funcionalidades}
+
+\begin{itemize}[nosep]
+  \item Conexão VPN (SSTP) diretamente pela aplicação
+  \item Upload e gravação de firmware (\texttt{.hex}) via SCP + \texttt{avrdude}
+  \item Reset das placas via scripts PowerShell remotos
+  \item Terminal serial para monitorar saída das placas em tempo real
+  \item Terminal SSH para executar comandos no PC remoto
+  \item Câmera ao vivo para visualizar as placas reagindo aos comandos
+  \item Suporte a múltiplos PCs e placas do laboratório
+  \item Configuração inicial automática (primeira execução)
+  \item Criação automática da pasta remota do usuário
+\end{itemize}
+
+% === 2. Instalação ===============================================
+\section{Instalação}
+
+\subsection{Executável (recomendado)}
+
+Basta baixar o arquivo \texttt{RemoteFlasher.exe} e executar. Não é necessário instalar Python ou qualquer dependência.
+
+\subsection{Código-fonte}
+
+Para executar a partir do código-fonte:
+
+\begin{codigobox}
+git clone https://github.com/renatosfagundes/remote-flasher.git\\
+cd remote-flasher\\
+pip install -r requirements.txt\\
+python main.py
+\end{codigobox}
+
+\textbf{Dependências:} Python 3.9+, PySide6, paramiko, requests.
+
+% === 3. Primeira Execução ========================================
+\section{Primeira Execução}
+
+Na primeira vez que você abrir o aplicativo, uma janela de configuração será exibida solicitando:
+
+\begin{itemize}[nosep]
+  \item \textbf{Seu nome} --- usado para criar sua pasta no PC remoto.
+  \item \textbf{Pasta remota} --- preenchida automaticamente como \texttt{c:\textbackslash 2026\textbackslash <seu\_nome>}. Essa é a pasta no PC do laboratório onde seus arquivos \texttt{.hex} serão enviados.
+\end{itemize}
+
+Essas configurações são salvas em \texttt{\%APPDATA\%\textbackslash RemoteFlasher\textbackslash settings.json} e persistem entre sessões. Você pode limpar todas as configurações a qualquer momento pelo link ``Clear All Settings'' no rodapé da aba VPN.
+
+A pasta remota é criada automaticamente no PC do laboratório na primeira operação que a utilize (flash, serial, reset, etc.).
+
+% === 4. Conectando à VPN ========================================
+\section{Conectando à VPN}
+
+A aba \textbf{VPN} permite conectar-se à rede do laboratório:
+
+\begin{itemize}[nosep]
+  \item Nome da conexão: \texttt{VPN\_CIN} (já configurado)
+  \item Endereço: \texttt{vpn.cin.ufpe.br}
+  \item Protocolo: SSTP
+  \item Usuário e senha: suas credenciais do CIn
+\end{itemize}
+
+\textbf{Passos:}
+\begin{enumerate}[nosep]
+  \item Insira seu usuário e senha na aba VPN
+  \item (Opcional) Marque ``Remember me'' para salvar as credenciais localmente
+  \item Clique em ``Connect VPN''
+  \item Aguarde a conexão ser estabelecida (indicador verde)
+\end{enumerate}
+
+\begin{notabox}
+Se a VPN ainda não estiver configurada no Windows, clique em ``Setup VPN'' para criar a conexão automaticamente.
+\end{notabox}
+
+\subsection{Limpar Configurações}
+
+O link ``Clear All Settings'' no rodapé da aba VPN remove todas as configurações salvas (credenciais VPN, pasta remota) e fecha o aplicativo. Na próxima execução, o diálogo de primeira configuração será exibido novamente.
+
+% === 5. Gravando Firmware ========================================
+\section{Gravando Firmware (Flash)}
+
+A aba \textbf{Flash} permite enviar e gravar firmware nas placas.
+
+\textbf{Passos:}
+\begin{enumerate}[nosep]
+  \item Selecione o PC de destino (ex: PC 217)
+  \item Selecione a placa (ex: Placa 01)
+  \item Selecione a porta ECU (porta COM do Arduino no PC remoto)
+  \item Clique em ``Browse'' e selecione seu arquivo \texttt{.hex}
+  \item Clique em ``Flash''
+\end{enumerate}
+
+O aplicativo irá automaticamente:
+\begin{enumerate}[nosep, label=\alph*)]
+  \item Criar sua pasta remota (se não existir)
+  \item Enviar o arquivo \texttt{.hex} via SCP
+  \item Resetar a placa (se configurado)
+  \item Gravar o firmware usando \texttt{avrdude}
+  \item Reportar sucesso ou falha no log
+\end{enumerate}
+
+\begin{notabox}
+Os arquivos \texttt{.hex} são gerados pelo Trampoline RTOS após a compilação. Exemplo: \texttt{lab02a\_fw.hex}
+\end{notabox}
+
+% === 6. Terminal Serial ==========================================
+\section{Terminal Serial}
+
+A aba \textbf{Serial} permite monitorar a saída serial das placas em tempo real através de SSH. O aplicativo executa o script \texttt{serialterm.py} no PC remoto e exibe a saída no terminal.
+
+\textbf{Passos:}
+\begin{enumerate}[nosep]
+  \item Selecione o PC e a porta COM
+  \item Configure o baudrate (padrão: 115200)
+  \item Clique em ``Connect''
+  \item A saída serial será exibida em tempo real
+  \item Clique em ``Disconnect'' para encerrar
+\end{enumerate}
+
+% === 7. Terminal SSH =============================================
+\section{Terminal SSH}
+
+A aba \textbf{SSH Terminal} permite executar comandos arbitrários no PC remoto para depuração ou gerenciamento de arquivos.
+
+\textbf{Passos:}
+\begin{enumerate}[nosep]
+  \item Selecione o PC de destino
+  \item Opcionalmente, defina o diretório de trabalho remoto
+  \item Digite o comando e pressione Enter ou clique em ``Run''
+  \item A saída será exibida no terminal
+\end{enumerate}
+
+\begin{notabox}
+O PC remoto usa Windows, então use comandos Windows (\texttt{dir}, \texttt{cd}, \texttt{copy}, etc.) e não comandos Linux (\texttt{ls}, \texttt{pwd}, \texttt{cp}, etc.).
+\end{notabox}
+
+% === 8. Reset de Placas ==========================================
+\section{Reset de Placas}
+
+A aba \textbf{Reset} permite enviar um sinal de reset para uma placa específica. O reset é feito executando scripts PowerShell (ex: \texttt{reset\_placa\_01.ps1}) no PC remoto.
+
+\textbf{Passos:}
+\begin{enumerate}[nosep]
+  \item Selecione o PC e a placa
+  \item Clique em ``Reset''
+  \item Aguarde a confirmação no log
+\end{enumerate}
+
+% === 9. Câmera ===================================================
+\section{Câmera ao Vivo}
+
+Um painel de câmera pode ser exibido ao lado direito da aplicação, mostrando o feed de vídeo do laboratório em tempo real. Isso permite visualizar os LEDs das placas e confirmar visualmente que o firmware está funcionando.
+
+\begin{itemize}[nosep]
+  \item O painel aparece automaticamente nas abas Flash, Serial, SSH e Reset
+  \item Na aba VPN, o painel de câmera fica oculto
+  \item Você pode mostrar/ocultar o painel clicando no botão da câmera
+\end{itemize}
+
+% === 10. Configuração dos PCs ====================================
+\section{Configuração dos PCs}
+
+O arquivo \texttt{lab\_config.py} contém a configuração de todos os PCs e placas do laboratório. Os PCs disponíveis são:
+
+\begin{center}
+\begin{tabular}{llll}
+  \toprule
+  \textbf{PC} & \textbf{IP} & \textbf{Método Flash} & \textbf{Placas} \\
+  \midrule
+  PC 217 & 172.20.36.217 & avrdude  & 4 (com reset) \\
+  PC 218 & 172.20.36.218 & avrdude  & 4 (sem reset) \\
+  PC 220 & 172.20.36.220 & flash.py & 4 (com reset) \\
+  PC 221 & 172.20.36.221 & avrdude  & 4 (sem reset) \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Cada placa possui 4 portas ECU (Arduino), uma porta de reset e um script de reset associado. As portas COM específicas estão documentadas em \texttt{lab\_config.py}.
+
+% === 11. Solução de Problemas ====================================
+\section{Solução de Problemas}
+
+\subsection{VPN não conecta}
+\begin{itemize}[nosep]
+  \item Verifique se suas credenciais estão corretas
+  \item Tente o botão ``Setup VPN'' para recriar a conexão
+  \item Verifique se outra VPN não está ativa
+\end{itemize}
+
+\subsection{Erro ao gravar firmware}
+\begin{itemize}[nosep]
+  \item Verifique se a porta COM está correta para a placa selecionada
+  \item Tente resetar a placa antes de gravar novamente
+  \item Verifique se o arquivo \texttt{.hex} é válido e não está corrompido
+  \item Verifique se o baudrate do avrdude está correto (padrão: 57600)
+\end{itemize}
+
+\subsection{Terminal serial mostra caracteres estranhos}
+\begin{itemize}[nosep]
+  \item Verifique se o baudrate está correto (deve ser 115200 para Trampoline)
+  \item Tente desconectar e reconectar
+\end{itemize}
+
+\subsection{Câmera não carrega}
+\begin{itemize}[nosep]
+  \item Verifique se o PC remoto tem o servidor de câmera ativo na porta 8080
+  \item Tente acessar a URL da câmera diretamente no navegador
+\end{itemize}
+
+\subsection{Aplicativo fecha ao clicar em botões}
+\begin{itemize}[nosep]
+  \item Isso pode indicar um erro de configuração
+  \item Tente executar a partir do código-fonte (\texttt{python main.py}) para ver mensagens de erro no terminal
+\end{itemize}
+
+\end{document}

@@ -2,7 +2,8 @@
 REM Build standalone .exe with PyInstaller
 REM Run from the remote_flasher directory
 
-set PYTHON=C:\Espressif\tools\idf-python\3.11.2\python.exe
+REM Use python from PATH by default. Override by setting PYTHON env var before running.
+if not defined PYTHON set PYTHON=python
 
 echo Installing PyInstaller if needed...
 %PYTHON% -m pip install pyinstaller --quiet

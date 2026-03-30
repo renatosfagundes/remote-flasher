@@ -102,9 +102,20 @@ def _save_credentials(username: str, password: str):
 
 
 def _clear_credentials():
-    """Remove the saved credentials file."""
+    """Remove just the VPN credentials from settings."""
+    settings = _load_settings()
+    # Re-encode password before manipulating
+    if "vpn_password" in settings:
+        settings.pop("vpn_password")
+    settings.pop("vpn_username", None)
+    with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+
+
+def _clear_all_settings():
+    """Remove the entire settings file (full reset)."""
     try:
-        os.remove(_CREDENTIALS_FILE)
+        os.remove(_SETTINGS_FILE)
     except FileNotFoundError:
         pass
 
@@ -183,6 +194,12 @@ class SCPWorker(QThread):
                 self.host, username=self.user, password=self.password, timeout=15
             )
             sftp = client.open_sftp()
+            # Ensure remote directory exists
+            try:
+                sftp.stat(self.remote_path)
+            except FileNotFoundError:
+                self.output.emit(f"[SCP] Creating remote folder: {self.remote_path}")
+                sftp.mkdir(self.remote_path)
             filename = os.path.basename(self.local_path)
             remote_file = f"{self.remote_path}/{filename}"
             self.output.emit(f"[SCP] Uploading {filename} -> {remote_file}")
@@ -273,7 +290,8 @@ class SerialWorker(QThread):
                 timeout=15,
             )
             cmd = (
-                f"cd {self.remote_dir}"
+                f"mkdir {self.remote_dir} >nul 2>&1"
+                f" & cd {self.remote_dir}"
                 f" && copy {REMOTE_BASE_DIR}\\serialterm.py . >nul 2>&1"
                 f" & python serialterm.py --port {self.com_port} --baudrate {self.baudrate}"
             )
@@ -407,7 +425,7 @@ class VPNTab(QWidget):
 
         self.remember_cb = QCheckBox("Remember me")
         self.remember_cb.setToolTip(
-            "Save credentials locally in .credentials.json (not shared with source code)"
+            "Save credentials locally (not shared with source code)"
         )
         self.remember_cb.toggled.connect(self._on_remember_toggled)
         g.addWidget(self.remember_cb, 4, 1)
@@ -459,6 +477,18 @@ class VPNTab(QWidget):
         self.log = LogWidget()
         layout.addWidget(self.log)
 
+        # Small "Clear All Settings" link at the bottom
+        clear_row = QHBoxLayout()
+        clear_row.addStretch()
+        self.clear_settings_btn = QPushButton("Clear All Settings")
+        self.clear_settings_btn.setFlat(True)
+        self.clear_settings_btn.setStyleSheet("color: #888; font-size: 10px; text-decoration: underline; padding: 2px;")
+        self.clear_settings_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_settings_btn.setToolTip("Remove all saved settings and restart first-run setup")
+        self.clear_settings_btn.clicked.connect(self._on_clear_settings)
+        clear_row.addWidget(self.clear_settings_btn)
+        layout.addLayout(clear_row)
+
         # Connect thread-safe signals
         self._log_signal.connect(self.log.append_log)
         self._status_signal.connect(self._apply_status)
@@ -471,6 +501,27 @@ class VPNTab(QWidget):
                 _save_credentials(user, passwd)
         else:
             _clear_credentials()
+
+    def _on_clear_settings(self):
+        reply = QMessageBox.question(
+            self,
+            "Clear All Settings",
+            "This will remove all saved settings (VPN credentials, remote folder).\n"
+            "The app will close and show the first-run setup on next launch.\n\n"
+            "Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            _clear_all_settings()
+            self.vpn_user.clear()
+            self.vpn_pass.clear()
+            self.remember_cb.setChecked(False)
+            QMessageBox.information(
+                self, "Settings Cleared",
+                "All settings have been removed.\nThe app will now close."
+            )
+            QApplication.instance().quit()
 
     def _apply_status(self, indicator: str, label: str, connected: bool):
         """Apply status update on the main thread."""
@@ -507,17 +558,17 @@ class VPNTab(QWidget):
         try:
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", check_cmd],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True, timeout=15,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            if name in result.stdout:
+            if name.encode() in result.stdout:
                 self._log_signal.emit(
                     f"[VPN Setup] Profile '{name}' already exists. Removing to recreate..."
                 )
                 subprocess.run(
                     ["powershell", "-NoProfile", "-Command",
                      f'Remove-VpnConnection -Name "{name}" -Force'],
-                    capture_output=True, text=True, timeout=15,
+                    capture_output=True, timeout=15,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
         except Exception:
@@ -537,9 +588,11 @@ class VPNTab(QWidget):
         try:
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", create_cmd],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True, timeout=20,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
+            stdout = result.stdout.decode("cp850", errors="replace").strip() if isinstance(result.stdout, bytes) else result.stdout.strip()
+            stderr = result.stderr.decode("cp850", errors="replace").strip() if isinstance(result.stderr, bytes) else result.stderr.strip()
             if result.returncode == 0:
                 self._log_signal.emit(
                     f"[VPN Setup] Profile '{name}' created successfully!"
@@ -549,10 +602,10 @@ class VPNTab(QWidget):
                 )
             else:
                 self._log_signal.emit(f"[VPN Setup] Failed (exit={result.returncode})")
-                if result.stdout.strip():
-                    self._log_signal.emit(result.stdout.strip())
-                if result.stderr.strip():
-                    self._log_signal.emit(result.stderr.strip())
+                if stdout:
+                    self._log_signal.emit(stdout)
+                if stderr:
+                    self._log_signal.emit(stderr)
         except Exception as e:
             self._log_signal.emit(f"[VPN Setup] Error: {e}")
 
@@ -585,18 +638,20 @@ class VPNTab(QWidget):
         try:
             result = subprocess.run(
                 ["rasdial", name, user, passwd],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, timeout=30,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
+            stdout = result.stdout.decode("cp850", errors="replace").strip()
+            stderr = result.stderr.decode("cp850", errors="replace").strip()
             if result.returncode == 0:
                 self._log_signal.emit("[VPN] Connected successfully!")
-                self._log_signal.emit(result.stdout.strip())
+                self._log_signal.emit(stdout)
                 self._status_signal.emit("connected", "Connected", True)
             else:
                 self._log_signal.emit(f"[VPN] Connection failed (exit={result.returncode})")
-                self._log_signal.emit(result.stdout.strip())
-                if result.stderr.strip():
-                    self._log_signal.emit(result.stderr.strip())
+                self._log_signal.emit(stdout)
+                if stderr:
+                    self._log_signal.emit(stderr)
                 self._status_signal.emit("disconnected", "Failed", False)
         except subprocess.TimeoutExpired:
             self._log_signal.emit("[VPN] Connection timed out (30s).")
@@ -611,10 +666,10 @@ class VPNTab(QWidget):
         try:
             result = subprocess.run(
                 ["rasdial", name, "/disconnect"],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True, timeout=15,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            self.log.append_log(result.stdout.strip())
+            self.log.append_log(result.stdout.decode("cp850", errors="replace").strip())
         except Exception as e:
             self.log.append_log(f"[VPN] Disconnect error: {e}")
 
@@ -632,15 +687,16 @@ class VPNTab(QWidget):
         try:
             result = subprocess.run(
                 ["ping", "-n", "1", "-w", "3000", "172.20.36.217"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, timeout=10,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
+            stdout = result.stdout.decode("cp850", errors="replace").strip()
             if result.returncode == 0:
                 self._log_signal.emit("[VPN] SUCCESS — 172.20.36.217 is reachable!")
                 self._status_signal.emit("connected", "Reachable", True)
             else:
                 self._log_signal.emit("[VPN] FAILED — host not reachable. Is the VPN connected?")
-                self._log_signal.emit(result.stdout.strip())
+                self._log_signal.emit(stdout)
                 self._status_signal.emit("disconnected", "Not reachable", False)
         except Exception as e:
             self._log_signal.emit(f"[VPN] Test error: {e}")
@@ -767,7 +823,7 @@ class FlashTab(QWidget):
         reset_port = board.get("reset_port")
 
         if reset_script:
-            cmd = f'cd {_get_remote_user_dir()} && copy {REMOTE_SCRIPTS_DIR}\\{reset_script} . >nul 2>&1 & powershell -ExecutionPolicy Bypass -File {reset_script}'
+            cmd = f'mkdir {_get_remote_user_dir()} >nul 2>&1 & cd {_get_remote_user_dir()} && copy {REMOTE_SCRIPTS_DIR}\\{reset_script} . >nul 2>&1 & powershell -ExecutionPolicy Bypass -File {reset_script}'
         elif reset_port and pc.get("flash_method") == "flash.py":
             # For PC 220 style, the reset is handled by flash.py
             self.log.append_log("[Reset] This PC uses flash.py — reset is integrated into flash.")
@@ -866,7 +922,7 @@ class FlashTab(QWidget):
 
         reset_script = board.get("reset_script")
         if reset_script:
-            cmd = f'cd {_get_remote_user_dir()} && copy {REMOTE_SCRIPTS_DIR}\\{reset_script} . >nul 2>&1 & powershell -ExecutionPolicy Bypass -File {reset_script}'
+            cmd = f'mkdir {_get_remote_user_dir()} >nul 2>&1 & cd {_get_remote_user_dir()} && copy {REMOTE_SCRIPTS_DIR}\\{reset_script} . >nul 2>&1 & powershell -ExecutionPolicy Bypass -File {reset_script}'
             self.log.append_log("[All] Resetting board...")
             worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd)
             worker.output.connect(self.log.append_log)
