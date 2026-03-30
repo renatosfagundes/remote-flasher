@@ -177,10 +177,30 @@ Para executar a partir do código-fonte:
 git clone https://github.com/renatosfagundes/remote-flasher.git\\
 cd remote-flasher\\
 pip install -r requirements.txt\\
-python main.py
+cp secrets.example.py secrets.py   \# editar com as credenciais do lab\\
+python src/main.py
 \end{codigobox}
 
 \textbf{Dependências:} Python 3.9+, PySide6, paramiko, requests.
+
+\subsection{Configurando as credenciais (\texttt{secrets.py})}
+
+O arquivo \texttt{secrets.py} contém os endereços IP, usuários e senhas SSH dos PCs do laboratório. Esse arquivo \textbf{não é incluído no repositório} por segurança.
+
+Para obter o \texttt{secrets.py} com as credenciais corretas, entre em contato com \textbf{Davi} ou \textbf{Renato}.
+
+Se você está configurando um novo laboratório, copie \texttt{secrets.example.py} para \texttt{secrets.py} e preencha com os dados dos seus PCs:
+
+\begin{codigobox}
+SSH\_HOSTS = \{\\
+\quad "PC 217": \{\\
+\quad\quad "host": "192.168.1.100",\\
+\quad\quad "user": "seu\_usuario\_ssh",\\
+\quad\quad "password": "sua\_senha\_ssh",\\
+\quad\quad "camera\_url": "http://192.168.1.100:8080/video\_feed",\\
+\quad \},\\
+\}
+\end{codigobox}
 
 % === 3. Primeira Execução ========================================
 \section{Primeira Execução}
@@ -308,7 +328,14 @@ Um painel de câmera pode ser exibido ao lado direito da aplicação, mostrando 
 % === 10. Configuração dos PCs ====================================
 \section{Configuração dos PCs}
 
-O arquivo \texttt{lab\_config.py} contém a configuração de todos os PCs e placas do laboratório. Os PCs disponíveis são:
+A configuração está dividida em dois arquivos:
+
+\begin{itemize}[nosep]
+  \item \texttt{src/lab\_config.py} --- configuração de placas, portas COM, métodos de flash (público)
+  \item \texttt{secrets.py} --- IPs, usuários e senhas SSH (privado, gitignored)
+\end{itemize}
+
+Os PCs disponíveis são:
 
 \begin{center}
 \begin{tabular}{llll}
@@ -325,7 +352,27 @@ O arquivo \texttt{lab\_config.py} contém a configuração de todos os PCs e pla
 
 Cada placa possui 4 portas ECU (Arduino), uma porta de reset e um script de reset associado. As portas COM específicas estão documentadas em \texttt{lab\_config.py}.
 
-% === 11. Solução de Problemas ====================================
+% === 11. Estrutura do Projeto =====================================
+\section{Estrutura do Projeto}
+
+\begin{codigobox}
+remote-flasher/\\
+\quad src/\\
+\quad\quad main.py\quad\quad\quad\quad\# Aplicação principal (GUI)\\
+\quad\quad lab\_config.py\quad\# Configuração de placas e portas\\
+\quad\quad serialterm.py\quad\# Script de terminal serial (roda no PC remoto)\\
+\quad assets/\\
+\quad\quad icon.ico\quad\quad\quad\quad\# Ícone da aplicação\\
+\quad docs/\\
+\quad\quad manual.tex\quad\quad\quad\# Este manual (compilar com tectonic)\\
+\quad secrets.example.py\quad\# Template de credenciais\\
+\quad secrets.py\quad\quad\quad\quad\quad\# Credenciais (gitignored)\\
+\quad requirements.txt\quad\quad\# Dependências Python\\
+\quad build\_exe.bat\quad\quad\quad\# Script para gerar o .exe\\
+\quad README.md\quad\quad\quad\quad\quad\# Documentação\\
+\end{codigobox}
+
+% === 12. Solução de Problemas ====================================
 \section{Solução de Problemas}
 
 \subsection{VPN não conecta}

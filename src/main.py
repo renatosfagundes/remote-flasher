@@ -45,11 +45,11 @@ from PySide6.QtWidgets import (
 
 from lab_config import COMPUTERS, AVRDUDE_DEFAULTS, SERIAL_DEFAULTS, REMOTE_BASE_DIR, REMOTE_SCRIPTS_DIR, REMOTE_USER_DIR
 
-# App directory — where the script/exe lives (used for icon, etc.)
+# App directory — project root (one level up from src/)
 if getattr(sys, 'frozen', False):
     _APP_DIR = os.path.dirname(sys.executable)
 else:
-    _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+    _APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # User settings — stored in AppData so the exe can live anywhere
 _SETTINGS_DIR = os.path.join(os.environ.get("APPDATA", _APP_DIR), "RemoteFlasher")
@@ -147,17 +147,19 @@ class SSHWorker(QThread):
             )
             self.output.emit(f"[SSH] Running: {self.command}")
             stdin, stdout, stderr = client.exec_command(self.command, timeout=120)
-            # Read raw bytes and decode with fallback for Windows cp850/cp1252 output
+            # Read raw bytes and decode — try utf-8 first, fall back to cp850 (Windows console)
             raw_out = stdout.read()
             raw_err = stderr.read()
-            for line in raw_out.decode("utf-8", errors="replace").splitlines():
-                if self._stop:
-                    break
-                self.output.emit(line)
-            for line in raw_err.decode("utf-8", errors="replace").splitlines():
-                if self._stop:
-                    break
-                self.output.emit(f"[STDERR] {line}")
+            for raw in (raw_out, raw_err):
+                is_err = raw is raw_err
+                try:
+                    text = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = raw.decode("cp850", errors="replace")
+                for line in text.splitlines():
+                    if self._stop:
+                        break
+                    self.output.emit(f"[STDERR] {line}" if is_err else line)
             exit_status = stdout.channel.recv_exit_status()
             # Convert to signed 32-bit if needed (Windows returns large unsigned values)
             if exit_status > 0x7FFFFFFF:
@@ -1200,7 +1202,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 700)
 
         # Set window icon
-        icon_path = os.path.join(getattr(sys, '_MEIPASS', _APP_DIR), "icon.ico")
+        icon_path = os.path.join(getattr(sys, '_MEIPASS', _APP_DIR), "assets", "icon.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
@@ -1359,7 +1361,7 @@ def main():
     app.setApplicationName("Remote Firmware Flasher")
 
     # Set app-wide icon (shows in taskbar)
-    icon_path = os.path.join(getattr(sys, '_MEIPASS', _APP_DIR), "icon.ico")
+    icon_path = os.path.join(getattr(sys, '_MEIPASS', _APP_DIR), "assets", "icon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 

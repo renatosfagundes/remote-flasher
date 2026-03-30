@@ -1,6 +1,6 @@
 @echo off
 REM Build standalone .exe with PyInstaller
-REM Run from the remote_flasher directory
+REM Run from the remote_flasher (project root) directory
 
 REM Use python from PATH by default. Override by setting PYTHON env var before running.
 if not defined PYTHON set PYTHON=python
@@ -13,13 +13,14 @@ echo Building executable...
     --onefile ^
     --windowed ^
     --name "RemoteFlasher" ^
-    --icon "icon.ico" ^
-    --add-data "icon.ico;." ^
-    --add-data "lab_config.py;." ^
-    --add-data "serialterm.py;." ^
+    --icon "assets\icon.ico" ^
+    --add-data "assets\icon.ico;assets" ^
+    --add-data "src\lab_config.py;." ^
+    --add-data "src\serialterm.py;." ^
+    --add-data "secrets.py;." ^
     --hidden-import paramiko ^
     --hidden-import requests ^
-    main.py
+    src\main.py
 
 echo.
 if exist dist\RemoteFlasher.exe (

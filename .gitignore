@@ -1,6 +1,12 @@
+# Secrets (SSH credentials, IPs) — NEVER commit
+secrets.py
+
 # User-specific settings (credentials, folder paths)
 .credentials.json
 .user_settings.json
+
+# Generated files
+docs/*.pdf
 
 # PyInstaller output
 dist/
