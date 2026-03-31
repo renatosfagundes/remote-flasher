@@ -5,13 +5,9 @@ secrets.py
 .credentials.json
 .user_settings.json
 
-# Generated files
-docs/*.pdf
-
 # PyInstaller output
 dist/
 build/
-*.spec
 
 # Python cache
 __pycache__/

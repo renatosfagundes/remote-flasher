@@ -1,5 +1,5 @@
 % ============================================================
-%  Manual do Usuário — Remote Firmware Flasher
+%  Manual do Usuário — Remote Firmware Flasher v2.0
 %  Compilar com: tectonic manual.tex
 % ============================================================
 \documentclass[12pt,a4paper]{article}
@@ -34,6 +34,8 @@
 \definecolor{cinzatexto}{RGB}{80,80,80}
 \definecolor{amarelodest}{RGB}{255,243,205}
 \definecolor{amarelob}{RGB}{180,130,0}
+\definecolor{verdedest}{RGB}{220,245,220}
+\definecolor{verdeb}{RGB}{40,120,40}
 
 \usepackage[
   colorlinks=true,
@@ -59,6 +61,13 @@
   breakable
 }
 
+\newtcolorbox{dicabox}[1][Dica]{
+  colback=verdedest, colframe=verdeb,
+  fonttitle=\bfseries\small, title=#1,
+  left=4pt, right=4pt, top=3pt, bottom=3pt,
+  breakable
+}
+
 \newtcolorbox{codigobox}{
   colback=gray!10, colframe=gray!40,
   fontupper=\ttfamily\small,
@@ -71,18 +80,32 @@
 \lstset{
   basicstyle=\ttfamily\footnotesize,
   keywordstyle=\color{azulmedio}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{verdeb},
   backgroundcolor=\color{gray!8},
   frame=single,
   framerule=0.4pt,
   rulecolor=\color{gray!40},
   breaklines=true,
-  showstringspaces=false
+  showstringspaces=false,
+  tabsize=2
+}
+
+\lstdefinelanguage{OIL}{
+  morekeywords={OIL_VERSION, CPU, OS, STATUS, BUILD, TRUE, FALSE, STANDARD,
+    TRAMPOLINE_BASE_PATH, APP_NAME, APP_SRC, CPPCOMPILER, COMPILER, LINKER,
+    ASSEMBLER, COPIER, SYSTEM, PYTHON, LIBRARY, SYSTEM_CALL, APPMODE,
+    ALARM, COUNTER, SystemCounter, ACTION, ACTIVATETASK, TASK, AUTOSTART,
+    ALARMTIME, CYCLETIME, PRIORITY, ACTIVATION, SCHEDULE, FULL, STACKSIZE},
+  morecomment=[l]{//},
+  morestring=[b]",
+  sensitive=true
 }
 
 % --- Cabeçalho e rodapé ------------------------------------------
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small\color{cinzatexto}Remote Firmware Flasher}
+\fancyhead[L]{\small\color{cinzatexto}Remote Firmware Flasher v2.0}
 \fancyhead[R]{\small\color{cinzatexto}Manual do Usuário}
 \fancyfoot[C]{\small\color{cinzatexto}\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -97,6 +120,10 @@
 \titleformat{\subsection}
   {\large\bfseries\color{azulmedio}}
   {\thesubsection}{0.6em}{}
+
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{azulmedio}}
+  {\thesubsubsection}{0.6em}{}
 
 % ================================================================
 \begin{document}
@@ -126,7 +153,7 @@
   ]
     \small
     \begin{tabular}{@{}ll@{}}
-      \textbf{Versão}          & 1.0 \\
+      \textbf{Versão}          & 2.0 \\
       \textbf{Data}            & Março de 2026 \\
       \textbf{Repositório}     & \texttt{renatosfagundes/remote-flasher} \\
       \textbf{Plataforma}      & Windows 10/11 \\
@@ -154,12 +181,12 @@ O \textbf{Remote Firmware Flasher} é uma aplicação desktop (PySide6) que perm
   \item Conexão VPN (SSTP) diretamente pela aplicação
   \item Upload e gravação de firmware (\texttt{.hex}) via SCP + \texttt{avrdude}
   \item Reset das placas via scripts PowerShell remotos
-  \item Terminal serial para monitorar saída das placas em tempo real
+  \item Até 4 terminais serial simultâneos com envio de comandos
   \item Terminal SSH para executar comandos no PC remoto
-  \item Câmera ao vivo para visualizar as placas reagindo aos comandos
-  \item Suporte a múltiplos PCs e placas do laboratório
-  \item Configuração inicial automática (primeira execução)
-  \item Criação automática da pasta remota do usuário
+  \item Upload de arquivos e pastas via SFTP com barra de progresso
+  \item Câmera ao vivo para visualizar as placas
+  \item Configuração automática do ambiente de desenvolvimento (Setup)
+  \item Guias de integração com Notepad++ e VSCode
 \end{itemize}
 
 % === 2. Instalação ===============================================
@@ -185,157 +212,526 @@ python src/main.py
 
 \subsection{Configurando as credenciais (\texttt{secrets.py})}
 
-O arquivo \texttt{secrets.py} contém os endereços IP, usuários e senhas SSH dos PCs do laboratório. Esse arquivo \textbf{não é incluído no repositório} por segurança.
+O arquivo \texttt{secrets.py} contém os endereços IP, usuários e senhas SSH dos PCs do laboratório. Esse arquivo \textbf{não é incluído no repositório} por segurança. Para obtê-lo, entre em contato com \textbf{Davi} ou \textbf{Renato}.
 
-Para obter o \texttt{secrets.py} com as credenciais corretas, entre em contato com \textbf{Davi} ou \textbf{Renato}.
+% === 3. Configuração do Ambiente =================================
+\section{Configuração do Ambiente de Desenvolvimento}
 
-Se você está configurando um novo laboratório, copie \texttt{secrets.example.py} para \texttt{secrets.py} e preencha com os dados dos seus PCs:
+A aba \textbf{Setup} do aplicativo automatiza toda a configuração do ambiente necessário para compilar e gravar firmware usando o Trampoline RTOS.
+
+\subsection{O que é instalado automaticamente}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lX}
+  \toprule
+  \textbf{Componente} & \textbf{Descrição} \\
+  \midrule
+  Arduino CLI       & Ferramenta de linha de comando para compilar e gravar firmware Arduino \\
+  AVR Toolchain     & Compilador GCC para microcontroladores AVR (avr-gcc, avr-objcopy, etc.) \\
+  Trampoline RTOS   & Sistema operacional de tempo real compatível com OSEK/AUTOSAR \\
+  goil              & Compilador OIL (OSEK Implementation Language) do Trampoline \\
+  Arduino Core      & Bibliotecas do Arduino para uso com Trampoline \\
+  Template Nano     & Template de configuração do Trampoline para Arduino Nano \\
+  MCP\_CAN          & Biblioteca para comunicação CAN via módulo MCP2515 \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Executando o Setup}
+
+\begin{enumerate}[nosep]
+  \item Abra a aba \textbf{Setup}
+  \item Os indicadores mostram o status de cada componente (verde = instalado, vermelho = ausente)
+  \item Clique em \textbf{``Run Full Setup''} para instalar tudo automaticamente
+  \item Acompanhe o progresso no log à esquerda
+  \item Após a conclusão, abra um \textbf{novo terminal} para que as variáveis PATH sejam reconhecidas
+\end{enumerate}
+
+\begin{notabox}[Importante]
+O setup requer conexão com a internet para baixar os componentes. O processo pode levar alguns minutos na primeira execução. Execuções subsequentes são rápidas pois detectam o que já está instalado.
+\end{notabox}
+
+\subsection{Verificação manual}
+
+Após o setup, abra um novo terminal e verifique:
 
 \begin{codigobox}
-SSH\_HOSTS = \{\\
-\quad "PC 217": \{\\
-\quad\quad "host": "192.168.1.100",\\
-\quad\quad "user": "seu\_usuario\_ssh",\\
-\quad\quad "password": "sua\_senha\_ssh",\\
-\quad\quad "camera\_url": "http://192.168.1.100:8080/video\_feed",\\
-\quad \},\\
-\}
+arduino-cli version\\
+avr-gcc --version\\
+goil --version
 \end{codigobox}
 
-% === 3. Primeira Execução ========================================
+\subsection{Estrutura de diretórios}
+
+Todos os componentes são instalados em \texttt{C:\textbackslash ESA}:
+
+\begin{codigobox}
+C:\textbackslash ESA\textbackslash\\
+\quad arduino\_cli\textbackslash bin\textbackslash\quad\quad\# Arduino CLI\\
+\quad avr\_tools\textbackslash\quad\quad\quad\quad\quad\quad\# AVR GCC Toolchain + goil\\
+\quad trampoline\textbackslash\quad\quad\quad\quad\quad\# Trampoline RTOS\\
+\quad\quad examples\textbackslash avr\textbackslash\quad\quad\# Exemplos (arduinoUno, arduinoNano)\\
+\quad\quad goil\textbackslash templates\textbackslash\quad\# Templates de configuração\\
+\quad\quad opt\textbackslash devel\textbackslash\quad\quad\quad\# Diretório de desenvolvimento\\
+\end{codigobox}
+
+% === 4. Primeira Execução ========================================
 \section{Primeira Execução}
 
 Na primeira vez que você abrir o aplicativo, uma janela de configuração será exibida solicitando:
 
 \begin{itemize}[nosep]
   \item \textbf{Seu nome} --- usado para criar sua pasta no PC remoto.
-  \item \textbf{Pasta remota} --- preenchida automaticamente como \texttt{c:\textbackslash 2026\textbackslash <seu\_nome>}. Essa é a pasta no PC do laboratório onde seus arquivos \texttt{.hex} serão enviados.
+  \item \textbf{Pasta remota} --- preenchida automaticamente como \texttt{c:\textbackslash 2026\textbackslash <seu\_nome>}.
 \end{itemize}
 
-Essas configurações são salvas em \texttt{\%APPDATA\%\textbackslash RemoteFlasher\textbackslash settings.json} e persistem entre sessões. Você pode limpar todas as configurações a qualquer momento pelo link ``Clear All Settings'' no rodapé da aba VPN.
+Configurações são salvas em \texttt{\%APPDATA\%\textbackslash RemoteFlasher\textbackslash settings.json}.
 
-A pasta remota é criada automaticamente no PC do laboratório na primeira operação que a utilize (flash, serial, reset, etc.).
-
-% === 4. Conectando à VPN ========================================
+% === 5. Conectando à VPN ========================================
 \section{Conectando à VPN}
 
 A aba \textbf{VPN} permite conectar-se à rede do laboratório:
 
-\begin{itemize}[nosep]
-  \item Nome da conexão: \texttt{VPN\_CIN} (já configurado)
-  \item Endereço: \texttt{vpn.cin.ufpe.br}
-  \item Protocolo: SSTP
-  \item Usuário e senha: suas credenciais do CIn
-\end{itemize}
-
-\textbf{Passos:}
 \begin{enumerate}[nosep]
-  \item Insira seu usuário e senha na aba VPN
-  \item (Opcional) Marque ``Remember me'' para salvar as credenciais localmente
+  \item Insira seu usuário e senha do CIn
+  \item (Opcional) Marque ``Remember me'' para salvar as credenciais
   \item Clique em ``Connect VPN''
-  \item Aguarde a conexão ser estabelecida (indicador verde)
+  \item Aguarde o indicador ficar verde
 \end{enumerate}
 
 \begin{notabox}
-Se a VPN ainda não estiver configurada no Windows, clique em ``Setup VPN'' para criar a conexão automaticamente.
+Se a VPN ainda não estiver configurada no Windows, clique em ``Setup VPN Profile'' primeiro.
 \end{notabox}
 
-\subsection{Limpar Configurações}
-
-O link ``Clear All Settings'' no rodapé da aba VPN remove todas as configurações salvas (credenciais VPN, pasta remota) e fecha o aplicativo. Na próxima execução, o diálogo de primeira configuração será exibido novamente.
-
-% === 5. Gravando Firmware ========================================
+% === 6. Gravando Firmware ========================================
 \section{Gravando Firmware (Flash)}
 
 A aba \textbf{Flash} permite enviar e gravar firmware nas placas.
 
-\textbf{Passos:}
 \begin{enumerate}[nosep]
   \item Selecione o PC de destino (ex: PC 217)
-  \item Selecione a placa (ex: Placa 01)
-  \item Selecione a porta ECU (porta COM do Arduino no PC remoto)
+  \item Selecione a placa (ex: Placa 01) e a porta ECU
   \item Clique em ``Browse'' e selecione seu arquivo \texttt{.hex}
-  \item Clique em ``Flash''
+  \item Use ``Upload + Reset + Flash'' para executar tudo de uma vez
 \end{enumerate}
 
-O aplicativo irá automaticamente:
-\begin{enumerate}[nosep, label=\alph*)]
-  \item Criar sua pasta remota (se não existir)
-  \item Enviar o arquivo \texttt{.hex} via SCP
-  \item Resetar a placa (se configurado)
-  \item Gravar o firmware usando \texttt{avrdude}
-  \item Reportar sucesso ou falha no log
-\end{enumerate}
-
-\begin{notabox}
-Os arquivos \texttt{.hex} são gerados pelo Trampoline RTOS após a compilação. Exemplo: \texttt{lab02a\_fw.hex}
-\end{notabox}
-
-% === 6. Terminal Serial ==========================================
+% === 7. Terminal Serial ==========================================
 \section{Terminal Serial}
 
-A aba \textbf{Serial} permite monitorar a saída serial das placas em tempo real através de SSH. O aplicativo executa o script \texttt{serialterm.py} no PC remoto e exibe a saída no terminal.
+A aba \textbf{Serial} permite monitorar até 4 conexões seriais simultaneamente e enviar comandos.
 
-\textbf{Passos:}
-\begin{enumerate}[nosep]
-  \item Selecione o PC e a porta COM
-  \item Configure o baudrate (padrão: 115200)
-  \item Clique em ``Connect''
-  \item A saída serial será exibida em tempo real
-  \item Clique em ``Disconnect'' para encerrar
-\end{enumerate}
+\subsection{Layout adaptativo}
 
-% === 7. Terminal SSH =============================================
-\section{Terminal SSH}
+\begin{itemize}[nosep]
+  \item \textbf{1 conexão:} painel único, área completa
+  \item \textbf{2 conexões:} lado a lado (divisor horizontal)
+  \item \textbf{3 conexões:} 2 em cima + 1 embaixo
+  \item \textbf{4 conexões:} grade 2$\times$2
+\end{itemize}
 
-A aba \textbf{SSH Terminal} permite executar comandos arbitrários no PC remoto para depuração ou gerenciamento de arquivos.
+Clique em \textbf{``+ Add Serial''} para adicionar uma nova conexão (máximo 4). Cada painel pode ser fechado pelo botão \textbf{X} (que desconecta automaticamente).
 
-\textbf{Passos:}
-\begin{enumerate}[nosep]
-  \item Selecione o PC de destino
-  \item Opcionalmente, defina o diretório de trabalho remoto
-  \item Digite o comando e pressione Enter ou clique em ``Run''
-  \item A saída será exibida no terminal
-\end{enumerate}
+\subsection{Enviando comandos}
+
+Cada painel possui um campo de texto na parte inferior para enviar comandos pela porta serial. Digite o comando e pressione \textbf{Enter} ou clique em \textbf{Send}. O campo só fica ativo quando a conexão está aberta.
+
+\subsection{Autoscroll}
+
+Desmarque a caixa \textbf{``Autoscroll''} para congelar a posição do scroll enquanto os dados continuam chegando --- útil para analisar mensagens CAN sem perder a posição.
+
+\subsection{Exclusão de portas}
+
+Quando um painel está conectado a uma porta COM, essa porta não aparece nos menus dos outros painéis, evitando conflitos.
+
+% === 8. Terminal SSH + Upload SFTP ===============================
+\section{Terminal SSH e Upload de Arquivos}
+
+A aba \textbf{SSH Terminal} combina execução de comandos e upload de arquivos.
+
+\subsection{Executar comandos}
+
+Digite um comando e pressione Enter. A saída é exibida no log.
 
 \begin{notabox}
-O PC remoto usa Windows, então use comandos Windows (\texttt{dir}, \texttt{cd}, \texttt{copy}, etc.) e não comandos Linux (\texttt{ls}, \texttt{pwd}, \texttt{cp}, etc.).
+O PC remoto usa Windows. Use comandos como \texttt{dir}, \texttt{cd}, \texttt{type}, e não \texttt{ls}, \texttt{pwd}, \texttt{cat}.
 \end{notabox}
 
-% === 8. Reset de Placas ==========================================
-\section{Reset de Placas}
+\subsection{Upload de arquivos e pastas (SFTP)}
 
-A aba \textbf{Reset} permite enviar um sinal de reset para uma placa específica. O reset é feito executando scripts PowerShell (ex: \texttt{reset\_placa\_01.ps1}) no PC remoto.
-
-\textbf{Passos:}
 \begin{enumerate}[nosep]
-  \item Selecione o PC e a placa
-  \item Clique em ``Reset''
-  \item Aguarde a confirmação no log
+  \item Clique em \textbf{``File...''} para selecionar um arquivo ou \textbf{``Folder...''} para uma pasta inteira
+  \item Defina o caminho remoto de destino
+  \item Clique em \textbf{``Upload''}
+  \item Acompanhe o progresso na barra
 \end{enumerate}
+
+A transferência usa SFTP (via paramiko) e cria diretórios remotos automaticamente. Pastas são enviadas recursivamente.
 
 % === 9. Câmera ===================================================
 \section{Câmera ao Vivo}
 
-Um painel de câmera pode ser exibido ao lado direito da aplicação, mostrando o feed de vídeo do laboratório em tempo real. Isso permite visualizar os LEDs das placas e confirmar visualmente que o firmware está funcionando.
+O painel de câmera exibe o feed MJPEG do laboratório. É visível nas abas Flash, Serial e SSH, podendo ser oculto/exibido pelo botão no canto da barra de abas. Com múltiplas conexões serial, a câmera reduz automaticamente para 25\% da largura.
 
+% === 10. Integração com IDEs ====================================
+\section{Integração com Notepad++}
+
+A aba \textbf{Setup} contém guias completas de integração. Abaixo está um resumo e um exemplo prático.
+
+\subsection{Plugins necessários}
+
+Instale via \textbf{Plugins $\rightarrow$ Plugins Admin}:
 \begin{itemize}[nosep]
-  \item O painel aparece automaticamente nas abas Flash, Serial, SSH e Reset
-  \item Na aba VPN, o painel de câmera fica oculto
-  \item Você pode mostrar/ocultar o painel clicando no botão da câmera
+  \item \textbf{NppExec} --- execução de comandos e scripts
+  \item \textbf{SourceCookifier} --- navegação de código
 \end{itemize}
 
-% === 10. Configuração dos PCs ====================================
-\section{Configuração dos PCs}
+Instale manualmente o \textbf{NppConsole} (baixe de \url{https://sourceforge.net/projects/nppconsole/}).
 
-A configuração está dividida em dois arquivos:
+\subsection{Exemplo: Compilar e gravar um projeto Trampoline}
+
+Crie o seguinte script em \texttt{Plugins $\rightarrow$ NppExec $\rightarrow$ Execute}:
+
+\begin{lstlisting}[caption={Script NppExec: trampoline\_build\_and\_flash.scp}]
+// [Trampoline] Build and Flash
+NPP_SAVEALL
+cd $(CURRENT_DIRECTORY)
+
+// Run goil to generate build files
+goil --target=avr/arduino/nano --templates=../../../../goil/templates/ $(NAME_PART).oil
+
+// Compile
+cmd /c python make.py
+
+// Flash (change COM port as needed)
+INPUTBOX "Serial port:":"COM": "COM25"
+set local commport = $(INPUT)
+arduino-cli upload -b arduino:avr:nano:cpu=atmega328old -p $(commport) -v -i image.hex -t
+\end{lstlisting}
+
+\begin{dicabox}
+Para criar um atalho de teclado: \textbf{Plugins $\rightarrow$ NppExec $\rightarrow$ Advanced Options}, associe o script a um item de menu, depois em \textbf{Settings $\rightarrow$ Shortcut Mapper} atribua uma tecla.
+\end{dicabox}
+
+\subsection{Máscaras de destaque para erros}
+
+Configure em \textbf{Plugins $\rightarrow$ NppExec $\rightarrow$ Console Output Filters $\rightarrow$ Highlights}:
+
+\begin{center}
+\small
+\begin{tabular}{clll}
+  \toprule
+  \textbf{\#} & \textbf{Máscara} & \textbf{Cor} & \textbf{Estilo} \\
+  \midrule
+  1 & \texttt{\%FILE\%:\%LINE\%:*: error:*} & Vermelho & Negrito \\
+  2 & \texttt{\%FILE\%:\%LINE\%:*: warning:*} & --- & Itálico \\
+  3 & \texttt{\%FILE\%:\%LINE\%:*: note:*} & Azul & Sublinhado \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+% === 11. Integração com VSCode ===================================
+\section{Integração com VSCode}
+
+\subsection{Extensões recomendadas}
 
 \begin{itemize}[nosep]
-  \item \texttt{src/lab\_config.py} --- configuração de placas, portas COM, métodos de flash (público)
-  \item \texttt{secrets.py} --- IPs, usuários e senhas SSH (privado, gitignored)
+  \item \textbf{C/C++} (Microsoft) --- IntelliSense e depuração
+  \item \textbf{Arduino} (Microsoft) --- gerenciamento de placas
 \end{itemize}
 
-Os PCs disponíveis são:
+\subsection{IntelliSense para AVR}
+
+Crie o arquivo \texttt{.vscode/c\_cpp\_properties.json} na raiz do seu projeto:
+
+\begin{lstlisting}[language={},caption={.vscode/c\_cpp\_properties.json}]
+{
+  "configurations": [{
+    "name": "AVR",
+    "includePath": [
+      "${workspaceFolder}/**",
+      "C:/ESA/avr_tools/avr8-gnu-toolchain-win32_x86/avr/include",
+      "C:/ESA/trampoline/os",
+      "C:/ESA/trampoline/machines/avr/arduino/cores/arduino",
+      "C:/ESA/trampoline/machines/avr/arduino/libraries/mcp_can/src"
+    ],
+    "defines": ["F_CPU=16000000", "__AVR_ATmega328P__", "ARDUINO=10813"],
+    "compilerPath":
+      "C:/ESA/avr_tools/avr8-gnu-toolchain-win32_x86/bin/avr-gcc.exe",
+    "cStandard": "c11",
+    "cppStandard": "c++14",
+    "intelliSenseMode": "gcc-x86"
+  }],
+  "version": 4
+}
+\end{lstlisting}
+
+\subsection{Tarefas de build (tasks.json)}
+
+Crie \texttt{.vscode/tasks.json} para automatizar compilação e gravação:
+
+\begin{lstlisting}[language={},caption={.vscode/tasks.json (resumido)}]
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Trampoline: goil + make",
+      "type": "shell",
+      "command": "goil --target=avr/arduino/nano --templates=${input:base}/goil/templates/ ${fileBasename} && python make.py",
+      "options": { "cwd": "${fileDirname}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Trampoline: Upload",
+      "type": "shell",
+      "command": "arduino-cli upload -b arduino:avr:nano:cpu=atmega328old -p ${input:com} -v -i image.hex -t",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Arduino: Compile + Upload",
+      "type": "shell",
+      "command": "arduino-cli compile -b arduino:avr:nano -v -e . && arduino-cli upload -b arduino:avr:nano -p ${input:com} -v -t",
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    }
+  ],
+  "inputs": [
+    { "id": "com", "description": "COM port", "default": "COM25", "type": "promptString" },
+    { "id": "base", "description": "Trampoline base path", "default": "../../../..", "type": "promptString" }
+  ]
+}
+\end{lstlisting}
+
+\begin{dicabox}
+Use \textbf{Ctrl+Shift+B} para executar a tarefa de build padrão (``goil + make'') e \textbf{Ctrl+Shift+P $\rightarrow$ Tasks: Run Task} para as demais.
+\end{dicabox}
+
+\subsection{Configurações recomendadas}
+
+Adicione ao \texttt{.vscode/settings.json}:
+
+\begin{lstlisting}[language={}]
+{
+  "files.associations": { "*.oil": "c", "*.ino": "cpp" },
+  "C_Cpp.errorSquiggles": "enabled",
+  "terminal.integrated.defaultProfile.windows": "Git Bash"
+}
+\end{lstlisting}
+
+% === 12. Exemplo Prático: LED com Alarme ==========================
+\section{Exemplo Prático: LED Controlado por Alarme}
+
+Este exemplo cria uma tarefa no Trampoline que alterna um LED a cada 500\,ms usando um alarme do RTOS. \textbf{Diferente do blink básico}, este exemplo usa duas tarefas com prioridades distintas e comunicação via evento.
+
+\subsection{Estrutura do projeto}
+
+\begin{codigobox}
+C:\textbackslash ESA\textbackslash trampoline\textbackslash opt\textbackslash devel\textbackslash led\_alarm\textbackslash\\
+\quad led\_alarm.oil\quad\# Descrição OSEK do sistema\\
+\quad led\_alarm.cpp\quad\# Código-fonte da aplicação\\
+\quad Board.h\quad\quad\quad\quad\# Definições de pinos (copiar da apostila)
+\end{codigobox}
+
+\subsection{Arquivo OIL}
+
+\begin{lstlisting}[language=OIL,caption={led\_alarm.oil}]
+OIL_VERSION = "2.5" : "led_alarm";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "led_alarm.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER = "avr-gcc";
+      LINKER = "avr-gcc";
+      ASSEMBLER = "avr-gcc";
+      COPIER = "avr-objcopy";
+      SYSTEM = PYTHON;
+      LIBRARY = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  // Alarme que ativa ToggleLed a cada 500ms
+  ALARM ledAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = ToggleLed; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 500;
+      CYCLETIME = 500;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  // Alarme que ativa PrintStatus a cada 2000ms
+  ALARM statusAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = PrintStatus; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 2000;
+      CYCLETIME = 2000;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK ToggleLed {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 128;
+  };
+
+  TASK PrintStatus {
+    PRIORITY = 5;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};
+\end{lstlisting}
+
+\subsection{Código-fonte}
+
+\begin{lstlisting}[language=C++,caption={led\_alarm.cpp}]
+#include "tpl_os.h"
+#include "Arduino.h"
+
+static bool ledState = false;
+static unsigned long toggleCount = 0;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_BUILTIN, OUTPUT);
+  Serial.println("LED Alarm example started.");
+}
+
+// Task de alta prioridade: alterna o LED
+TASK(ToggleLed) {
+  ledState = !ledState;
+  digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
+  toggleCount++;
+}
+
+// Task de baixa prioridade: imprime status na serial
+TASK(PrintStatus) {
+  Serial.print("LED toggles: ");
+  Serial.print(toggleCount);
+  Serial.print(" | State: ");
+  Serial.println(ledState ? "ON" : "OFF");
+}
+\end{lstlisting}
+
+\subsection{Compilar e gravar}
+
+Abra um terminal na pasta do projeto e execute:
+
+\begin{codigobox}
+cd C:\textbackslash ESA\textbackslash trampoline\textbackslash opt\textbackslash devel\textbackslash led\_alarm\\[4pt]
+goil --target=avr/arduino/nano --templates=../../../goil/templates/ led\_alarm.oil\\[4pt]
+python make.py\\[4pt]
+arduino-cli upload -b arduino:avr:nano:cpu=atmega328old -p COM25 -v -i image.hex -t
+\end{codigobox}
+
+Ou use o Remote Flasher:
+\begin{enumerate}[nosep]
+  \item Copie \texttt{image.hex} para sua máquina
+  \item Na aba Flash, selecione o PC, placa e porta
+  \item Faça ``Upload + Reset + Flash''
+  \item Na aba Serial, abra a porta para ver o status sendo impresso a cada 2 segundos
+\end{enumerate}
+
+% === 13. Exemplo: CAN com Trampoline =============================
+\section{Exemplo Prático: Comunicação CAN com RTOS}
+
+Este exemplo demonstra duas ECUs trocando mensagens CAN usando tarefas do Trampoline. \textbf{Diferente do exemplo da apostila}, aqui o transmissor envia dados de um potenciômetro e o receptor aciona um LED baseado no valor recebido.
+
+\subsection{ECU Transmissora (can\_pot\_tx)}
+
+\begin{lstlisting}[language=OIL,caption={can\_pot\_tx.oil (trecho relevante)}]
+  ALARM sendAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = SendPotValue; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 250;
+      CYCLETIME = 250;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK SendPotValue {
+    PRIORITY = 20;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+\end{lstlisting}
+
+\begin{lstlisting}[language=C++,caption={can\_pot\_tx.cpp}]
+#include "tpl_os.h"
+#include "Arduino.h"
+#include "Board.h"
+
+#define POT_ID 0x200
+MCP_CAN CAN1(CAN1_CS);
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(ECU1_AIN1, INPUT);
+  while (CAN1.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) != CAN_OK) {
+    delay(200);
+  }
+  CAN1.setMode(MCP_NORMAL);
+  Serial.println("CAN TX: Potentiometer sender ready.");
+}
+
+TASK(SendPotValue) {
+  int potVal = analogRead(ECU1_AIN1);
+  byte data[2] = { highByte(potVal), lowByte(potVal) };
+  byte ret = CAN1.sendMsgBuf(POT_ID, CAN_STDID, 2, data);
+  if (ret == CAN_OK) {
+    Serial.print("TX pot=");
+    Serial.println(potVal);
+  }
+}
+\end{lstlisting}
+
+\subsection{ECU Receptora (can\_pot\_rx)}
+
+\begin{lstlisting}[language=C++,caption={can\_pot\_rx.cpp (trecho relevante)}]
+TASK(ReceiveAndAct) {
+  if (!digitalRead(CAN_INT)) {
+    unsigned char dlc = 0;
+    unsigned char data[8];
+    long unsigned int id;
+    CAN1.readMsgBuf(&id, &dlc, data);
+
+    if ((id & CAN_EXTENDED_ID) == POT_ID && dlc >= 2) {
+      int potVal = (data[0] << 8) | data[1];
+      Serial.print("RX pot=");
+      Serial.println(potVal);
+
+      // Aciona LED se pot > 512 (metade da faixa)
+      digitalWrite(ECU2_DOUT1, potVal > 512 ? HIGH : LOW);
+    }
+  }
+}
+\end{lstlisting}
+
+\begin{dicabox}
+Use duas janelas seriais no Remote Flasher (aba Serial, ``+ Add Serial'') para monitorar TX e RX simultaneamente. O autoscroll pode ser desativado para analisar os frames CAN com calma.
+\end{dicabox}
+
+% === 14. Configuração dos PCs ====================================
+\section{Configuração dos PCs do Laboratório}
 
 \begin{center}
 \begin{tabular}{llll}
@@ -350,62 +746,73 @@ Os PCs disponíveis são:
 \end{tabular}
 \end{center}
 
-Cada placa possui 4 portas ECU (Arduino), uma porta de reset e um script de reset associado. As portas COM específicas estão documentadas em \texttt{lab\_config.py}.
+Cada placa possui 4 portas ECU (COM), uma porta de reset e um script associado. As portas estão documentadas em \texttt{src/lab\_config.py}.
 
-% === 11. Estrutura do Projeto =====================================
+% === 15. Estrutura do Projeto ====================================
 \section{Estrutura do Projeto}
 
 \begin{codigobox}
-remote-flasher/\\
+remote\_flasher/\\
 \quad src/\\
-\quad\quad main.py\quad\quad\quad\quad\# Aplicação principal (GUI)\\
-\quad\quad lab\_config.py\quad\# Configuração de placas e portas\\
-\quad\quad serialterm.py\quad\# Script de terminal serial (roda no PC remoto)\\
-\quad assets/\\
-\quad\quad icon.ico\quad\quad\quad\quad\# Ícone da aplicação\\
-\quad docs/\\
-\quad\quad manual.tex\quad\quad\quad\# Este manual (compilar com tectonic)\\
-\quad secrets.example.py\quad\# Template de credenciais\\
-\quad secrets.py\quad\quad\quad\quad\quad\# Credenciais (gitignored)\\
-\quad requirements.txt\quad\quad\# Dependências Python\\
-\quad build\_exe.bat\quad\quad\quad\# Script para gerar o .exe\\
-\quad README.md\quad\quad\quad\quad\quad\# Documentação\\
+\quad\quad main.py\quad\quad\quad\quad\quad\quad\# Ponto de entrada\\
+\quad\quad settings.py\quad\quad\quad\quad\# Persistência de configurações\\
+\quad\quad workers.py\quad\quad\quad\quad\quad\# Threads (SSH, SCP, SFTP, Serial, Câmera)\\
+\quad\quad widgets.py\quad\quad\quad\quad\quad\# LogWidget, StatusIndicator\\
+\quad\quad main\_window.py\quad\quad\quad\# MainWindow, CameraPanel\\
+\quad\quad lab\_config.py\quad\quad\quad\# Configuração de placas/portas\\
+\quad\quad serialterm.py\quad\quad\quad\# Script serial bidirecional (remoto)\\
+\quad\quad tabs/\\
+\quad\quad\quad vpn\_tab.py\quad\quad\quad\# Aba VPN\\
+\quad\quad\quad flash\_tab.py\quad\quad\# Aba Flash\\
+\quad\quad\quad serial\_tab.py\quad\quad\# Aba Serial (até 4 conexões)\\
+\quad\quad\quad ssh\_tab.py\quad\quad\quad\# Aba SSH + SFTP\\
+\quad\quad\quad setup\_tab.py\quad\quad\# Aba Setup + guias IDE\\
+\quad assets/icon.ico\\
+\quad docs/manual.tex\quad\quad\quad\quad\# Este manual\\
+\quad secrets.py\quad\quad\quad\quad\quad\quad\# Credenciais (gitignored)\\
+\quad setup\_environment.py\quad\# Script de configuração do ambiente\\
+\quad requirements.txt\\
+\quad build\_exe.bat
 \end{codigobox}
 
-% === 12. Solução de Problemas ====================================
+% === 16. Solução de Problemas ====================================
 \section{Solução de Problemas}
+
+\subsection{``make.py'' abre diálogo de seleção de programa}
+O Windows não associou arquivos \texttt{.py} ao Python. Execute em um \textbf{Prompt de Comando} (CMD) como administrador:
+\begin{codigobox}
+assoc .py=Python.File\\
+ftype Python.File="C:\textbackslash Users\textbackslash \%USERNAME\%\textbackslash AppData\textbackslash Local\textbackslash Programs\textbackslash Python\textbackslash Python311\textbackslash python.exe" "\%1" \%*
+\end{codigobox}
+Alternativa: sempre use \texttt{python make.py} em vez de \texttt{make.py}.
+
+\subsection{``goil'' não é reconhecido como comando}
+Abra um \textbf{novo} terminal após executar o Setup (as variáveis PATH são atualizadas no registro do Windows mas terminais já abertos não as recebem).
 
 \subsection{VPN não conecta}
 \begin{itemize}[nosep]
-  \item Verifique se suas credenciais estão corretas
-  \item Tente o botão ``Setup VPN'' para recriar a conexão
+  \item Verifique suas credenciais do CIn
+  \item Clique em ``Setup VPN Profile'' para recriar a conexão
   \item Verifique se outra VPN não está ativa
 \end{itemize}
 
 \subsection{Erro ao gravar firmware}
 \begin{itemize}[nosep]
-  \item Verifique se a porta COM está correta para a placa selecionada
-  \item Tente resetar a placa antes de gravar novamente
-  \item Verifique se o arquivo \texttt{.hex} é válido e não está corrompido
-  \item Verifique se o baudrate do avrdude está correto (padrão: 57600)
+  \item Verifique se a porta COM está correta
+  \item Tente resetar a placa antes de gravar
+  \item Verifique se o arquivo \texttt{.hex} é válido
 \end{itemize}
 
-\subsection{Terminal serial mostra caracteres estranhos}
+\subsection{Terminal serial: linhas quebradas ou caracteres estranhos}
 \begin{itemize}[nosep]
-  \item Verifique se o baudrate está correto (deve ser 115200 para Trampoline)
-  \item Tente desconectar e reconectar
+  \item Verifique se o baudrate está correto (115200 para Trampoline)
+  \item O log agora tem word wrap --- linhas longas (ex: frames CAN) são exibidas corretamente
 \end{itemize}
 
-\subsection{Câmera não carrega}
-\begin{itemize}[nosep]
-  \item Verifique se o PC remoto tem o servidor de câmera ativo na porta 8080
-  \item Tente acessar a URL da câmera diretamente no navegador
-\end{itemize}
+\subsection{Setup: ``Python interpreter not found''}
+O executável precisa de um Python instalado no sistema para executar o script de setup. Instale Python 3 e certifique-se de marcar ``Add to PATH'' durante a instalação.
 
-\subsection{Aplicativo fecha ao clicar em botões}
-\begin{itemize}[nosep]
-  \item Isso pode indicar um erro de configuração
-  \item Tente executar a partir do código-fonte (\texttt{python main.py}) para ver mensagens de erro no terminal
-\end{itemize}
+\subsection{Setup: download falha com erro SSL}
+Alguns servidores universitários têm certificados com problemas. O script automaticamente tenta novamente sem verificação SSL. Se ainda falhar, baixe o componente manualmente (o log indica a URL).
 
 \end{document}

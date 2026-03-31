@@ -11,12 +11,12 @@ A PySide6 desktop application for remotely flashing Arduino boards over VPN + SS
 - **VPN Connection** — Connect to the lab VPN (SSTP) directly from the app, with optional credential saving
 - **Firmware Flashing** — Upload `.hex` files via SCP and flash using `avrdude` over SSH
 - **Board Reset** — Trigger board reset via PowerShell scripts on the remote PC
-- **Serial Terminal** — Monitor serial output from the boards in real-time over SSH
-- **SSH Terminal** — Run arbitrary commands on the remote lab PCs
-- **Live Camera** — View the lab camera feed to see boards reacting to your commands (collapsible side panel)
+- **Multi-Serial Terminal** — Up to 4 simultaneous serial connections with spatial layout (side-by-side, 2+1, 2x2 grid), bidirectional send, autoscroll toggle, and port exclusion
+- **SSH Terminal + SFTP Upload** — Run commands and upload files/folders to the remote PC with progress tracking
+- **Live Camera** — View the lab camera feed (collapsible side panel, auto-resizes with serial panel count)
+- **Environment Setup** — One-click installation of Arduino CLI, AVR Toolchain, Trampoline RTOS, goil, MCP_CAN
+- **IDE Integration Guides** — Built-in guides for Notepad++ and VSCode with ready-to-use configurations
 - **Multi-PC Support** — Pre-configured for multiple lab PCs, each with 4 boards
-- **First-Run Setup** — New users are prompted to enter their name and remote folder on first launch
-- **Auto-create remote folder** — Your folder on the lab PC is created automatically on first use
 
 ## Installation
 
@@ -55,13 +55,26 @@ SSH_HOSTS = {
 }
 ```
 
-## First Run
+## Environment Setup
 
-On first launch, a setup dialog asks for:
-- **Your name** — used to create your folder on the remote PC
-- **Remote folder** — auto-filled as `c:\2026\<your_name>`
+The **Setup** tab automates the installation of all development tools needed for the course:
 
-Settings are saved to `%APPDATA%\RemoteFlasher\settings.json` and persist across sessions. Use the "Clear All Settings" link in the VPN tab to reset.
+| Component | Description |
+|---|---|
+| Arduino CLI | Compile and upload Arduino sketches |
+| AVR Toolchain | GCC cross-compiler for ATmega328p |
+| Trampoline RTOS | OSEK/AUTOSAR real-time OS |
+| goil | OIL compiler for Trampoline |
+| MCP_CAN | CAN bus library for MCP2515 modules |
+
+Everything is installed to `C:\ESA`. Click **"Run Full Setup"** and follow the progress log.
+
+A standalone `setup_environment.py` script is also available for use outside the GUI:
+
+```bash
+python setup_environment.py          # full install
+python setup_environment.py --check  # verify what's installed
+```
 
 ## Usage
 
@@ -72,41 +85,57 @@ Go to the **VPN** tab, enter your CIn credentials, and click **Connect**. Check 
 ### 2. Flash firmware
 
 1. Go to the **Flash** tab
-2. Select the target **PC** and **Board**
-3. Choose the **ECU port** (COM port on the remote PC)
-4. Browse for your `.hex` file
-5. Click **Flash** — the app will upload via SCP, reset, flash with avrdude, and report the result
+2. Select the target **PC**, **Board**, and **ECU port**
+3. Browse for your `.hex` file
+4. Click **Upload + Reset + Flash** to do everything in one step
 
 ### 3. Monitor serial output
 
-Go to the **Serial** tab, select the COM port, and click **Connect** to see real-time serial output.
+Go to the **Serial** tab. Click **"+ Add Serial"** for up to 4 simultaneous connections with adaptive layout:
+- **1 panel**: full area
+- **2 panels**: side by side
+- **3 panels**: 2 top + 1 bottom
+- **4 panels**: 2x2 grid
 
-### 4. SSH Terminal
+Each panel supports sending commands, has an autoscroll toggle, and connected ports are excluded from other panels.
 
-Run arbitrary commands on the remote PC for debugging or file management.
+### 4. SSH Terminal + File Upload
 
-### 5. Reset boards
+Run commands on the remote PC and upload files or entire folders via SFTP with a progress bar.
 
-Send reset signals to specific boards using PowerShell scripts on the remote PC.
+### 5. IDE Integration
+
+The **Setup** tab includes guides for integrating the toolchain with **Notepad++** (NppExec scripts, macros) and **VSCode** (IntelliSense, build tasks, settings).
 
 ## Project structure
 
 ```
-remote-flasher/
+remote_flasher/
   src/
-    main.py             # Application entry point and GUI
-    lab_config.py       # Board/COM port configuration (imports secrets)
-    serialterm.py       # Serial terminal script (runs on remote PC)
-  assets/
-    icon.ico            # Application icon
+    main.py             # Entry point
+    settings.py         # Persistence (load/save settings)
+    workers.py          # Background threads (SSH, SCP, SFTP, Serial, Camera)
+    widgets.py          # LogWidget, StatusIndicator
+    main_window.py      # MainWindow, CameraPanel
+    lab_config.py       # Board/COM port configuration
+    serialterm.py       # Bidirectional serial script (runs on remote PC)
+    tabs/
+      __init__.py       # Re-exports all tabs
+      vpn_tab.py        # VPN connection
+      flash_tab.py      # Firmware upload + flash
+      serial_tab.py     # Multi-serial terminal (up to 4)
+      ssh_tab.py        # SSH commands + SFTP upload
+      setup_tab.py      # Environment setup + IDE guides
+  assets/icon.ico
   docs/
     manual.tex          # User manual in pt-BR (compile with tectonic)
+    manual.pdf          # Compiled manual
+  setup_environment.py  # Standalone environment setup script
   secrets.example.py    # Template for credentials
   secrets.py            # Your credentials (gitignored)
-  requirements.txt      # Python dependencies
-  build_exe.bat         # Build standalone .exe with PyInstaller
-  README.md
-  .gitignore
+  requirements.txt
+  build_exe.bat
+  RemoteFlasher.spec    # PyInstaller build spec
 ```
 
 ## Building the executable
@@ -120,18 +149,24 @@ Output: `dist/RemoteFlasher.exe` (~52MB, all dependencies included).
 
 ## Documentation
 
-A full user manual in Portuguese (pt-BR) is available at `docs/manual.tex`. Compile with:
+A full user manual in Portuguese (pt-BR) is available at `docs/manual.pdf`. To recompile from source:
 
 ```bash
 tectonic docs/manual.tex
 ```
+
+The manual includes:
+- Complete usage guide for all tabs
+- Environment setup walkthrough
+- Notepad++ and VSCode integration with ready-to-use configurations
+- Practical examples: LED with RTOS alarm, CAN communication with potentiometer
 
 ## Dependencies
 
 | Package  | Purpose                    |
 |----------|----------------------------|
 | PySide6  | Qt6 GUI framework          |
-| paramiko | SSH/SCP connections        |
+| paramiko | SSH/SFTP connections       |
 | requests | HTTP camera feed retrieval |
 
 ## Security notes
