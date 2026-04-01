@@ -1,0 +1,66 @@
+// Example 04: Producer-Consumer with shared resource
+// Demonstrates GetResource/ReleaseResource for mutual exclusion
+OIL_VERSION = "2.5" : "prodcons";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "prodcons.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  RESOURCE bufferRes {
+    RESOURCEPROPERTY = STANDARD;
+  };
+
+  ALARM prodAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = Producer; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 500;
+      CYCLETIME = 500;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  ALARM consAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = Consumer; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 600;
+      CYCLETIME = 600;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK Producer {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+    RESOURCE = bufferRes;
+  };
+
+  TASK Consumer {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+    RESOURCE = bufferRes;
+  };
+};

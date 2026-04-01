@@ -1,0 +1,44 @@
+// Example 05: Basic CAN transmitter
+// Sends a counter value via CAN every 500ms
+OIL_VERSION = "2.5" : "can_tx";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "can_tx.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+      LIBRARY     = spi;
+      LIBRARY     = mcp_can;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM sendAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = SendFrame; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 500;
+      CYCLETIME = 500;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK SendFrame {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};

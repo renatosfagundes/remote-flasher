@@ -112,6 +112,20 @@ Run commands on the remote PC and upload files or entire folders via SFTP with a
 
 The **Setup** tab includes guides for integrating the toolchain with **Notepad++** (NppExec scripts, macros) and **VSCode** (IntelliSense, build tasks, settings).
 
+## Examples
+
+The `examples/` folder contains ready-to-compile Trampoline RTOS projects covering the core course concepts:
+
+| # | Example | Concepts |
+|---|---------|----------|
+| 01 | blink | Task, Alarm, `TerminateTask()` |
+| 02 | multitask | Multiple tasks, priorities, preemption |
+| 03 | alarm_dynamic | `SetRelAlarm()`, `CancelAlarm()`, runtime period change |
+| 04 | prodcons | `RESOURCE`, `GetResource()`, `ReleaseResource()`, producer-consumer |
+| 05 | can_basic | MCP2515 TX + RX, `sendMsgBuf()`, `readMsgBuf()` |
+
+Copy any example to `C:\ESA\trampoline\opt\devel\`, add `Board.h`, then build with `goil` + `python build.py`.
+
 ## Project structure
 
 ```
@@ -135,6 +149,12 @@ remote_flasher/
     VirtualIO/
       VirtualIO.h       # Virtual I/O Arduino library (header)
       VirtualIO.cpp     # Virtual I/O Arduino library (implementation)
+  examples/
+    01_blink/           # Task + Alarm basics
+    02_multitask/       # Multiple tasks and priorities
+    03_alarm_dynamic/   # Runtime alarm period changes
+    04_resource_prodcons/ # Shared resources, producer-consumer
+    05_can_basic/       # CAN TX + RX
   assets/icon.ico
   docs/
     manual.tex          # User manual in pt-BR (compile with tectonic)

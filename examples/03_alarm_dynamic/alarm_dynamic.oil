@@ -1,0 +1,42 @@
+// Example 03: Dynamic alarm — changes period at runtime using SetRelAlarm
+OIL_VERSION = "2.5" : "alarm_dynamic";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "alarm_dynamic.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  // Start with 1000ms, task will reprogram it dynamically
+  ALARM dynAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = DynamicTask; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 1000;
+      CYCLETIME = 1000;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK DynamicTask {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};

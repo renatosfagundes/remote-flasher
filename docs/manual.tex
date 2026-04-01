@@ -541,7 +541,227 @@ Adicione ao \texttt{.vscode/settings.json}:
 }
 \end{lstlisting}
 
-% === 12. Exemplo Prático: LED com Alarme ==========================
+% === 12. Guia de Desenvolvimento ==================================
+\section{Guia de Desenvolvimento --- Criando seu Projeto}
+
+\subsection{Passo a passo}
+
+\begin{enumerate}[nosep]
+  \item Copie uma pasta de exemplo de \texttt{examples/} para \texttt{C:\textbackslash ESA\textbackslash trampoline\textbackslash opt\textbackslash devel\textbackslash <seu\_projeto>}
+  \item Renomeie os arquivos \texttt{.oil} e \texttt{.cpp} com o nome do seu projeto
+  \item Edite o \texttt{.oil}: atualize \texttt{APP\_SRC} para seu \texttt{.cpp}
+  \item Edite o \texttt{.cpp}: implemente sua lógica
+  \item Copie \texttt{Board.h} (e \texttt{VirtualIO.h/cpp} se precisar) para a pasta
+  \item Compile: \texttt{goil --target=avr/arduino/nano --templates=../../../goil/templates/ <nome>.oil}
+  \item Build: \texttt{python build.py}
+  \item O arquivo \texttt{image.hex} é gerado na pasta do projeto
+  \item Grave no Arduino usando o Remote Flasher (aba Flash) ou \texttt{arduino-cli}
+\end{enumerate}
+
+\begin{notabox}[Importante]
+Os projetos devem estar dentro de \texttt{C:\textbackslash ESA\textbackslash trampoline\textbackslash opt\textbackslash devel\textbackslash} para que o caminho relativo \texttt{TRAMPOLINE\_BASE\_PATH = "../../../"} funcione corretamente.
+\end{notabox}
+
+% === 13. Referência OIL ===========================================
+\section{Referência Rápida --- Arquivo OIL}
+
+O arquivo \texttt{.oil} descreve a configuração do RTOS em linguagem OIL (OSEK Implementation Language). Abaixo estão os padrões mais usados.
+
+\subsection{Estrutura básica}
+
+\begin{lstlisting}[language=OIL]
+OIL_VERSION = "2.5" : "nome_projeto";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "meu_arquivo.cpp";
+      // APP_SRC = "VirtualIO.cpp";  // se usar Virtual I/O
+      CPPCOMPILER = "avr-g++";
+      COMPILER = "avr-gcc"; LINKER = "avr-gcc";
+      ASSEMBLER = "avr-gcc"; COPIER = "avr-objcopy";
+      SYSTEM = PYTHON;
+      LIBRARY = serial;
+      // LIBRARY = spi;      // se usar CAN
+      // LIBRARY = mcp_can;  // se usar CAN
+    };
+    SYSTEM_CALL = TRUE;
+  };
+  APPMODE stdAppmode {};
+
+  // ... TASKs, ALARMs, RESOURCEs aqui ...
+};
+\end{lstlisting}
+
+\subsection{TASK --- Declaração de tarefa}
+
+\begin{lstlisting}[language=OIL]
+  TASK NomeDaTask {
+    PRIORITY = 10;        // maior = mais prioritário
+    AUTOSTART = FALSE;    // TRUE se deve iniciar automaticamente
+    ACTIVATION = 1;       // máximo de ativações pendentes
+    SCHEDULE = FULL;      // FULL = preemptivo, NON = cooperativo
+    STACKSIZE = 256;      // tamanho da pilha em bytes
+    // RESOURCE = nomeRecurso;  // se usar recurso compartilhado
+  };
+\end{lstlisting}
+
+No código C++, a task é declarada com \texttt{TASK(NomeDaTask) \{ ... \}}. \textbf{Sempre termine com \texttt{TerminateTask();}}.
+
+\subsection{ALARM --- Ativação periódica}
+
+\begin{lstlisting}[language=OIL]
+  ALARM nomeAlarme {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = NomeDaTask; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 500;    // primeiro disparo (ms)
+      CYCLETIME = 500;    // período de repetição (ms)
+      APPMODE = stdAppmode;
+    };
+  };
+\end{lstlisting}
+
+\textbf{API para mudar período em tempo de execução:}
+\begin{lstlisting}[language=C++]
+CancelAlarm(nomeAlarme);                    // cancela alarme ativo
+SetRelAlarm(nomeAlarme, delay, cycle);      // reprograma (ms)
+\end{lstlisting}
+
+\textit{Ver exemplo \texttt{03\_alarm\_dynamic} na pasta \texttt{examples/}.}
+
+\subsection{RESOURCE --- Exclusão mútua}
+
+\begin{lstlisting}[language=OIL]
+  RESOURCE nomeRecurso {
+    RESOURCEPROPERTY = STANDARD;  // ou INTERNAL
+  };
+\end{lstlisting}
+
+\textbf{Uso no código C++:}
+\begin{lstlisting}[language=C++]
+TASK(MinhaTask) {
+    GetResource(nomeRecurso);
+    // ... seção crítica (acesso exclusivo) ...
+    ReleaseResource(nomeRecurso);
+    TerminateTask();
+}
+\end{lstlisting}
+
+Declare \texttt{RESOURCE = nomeRecurso;} na TASK que o utiliza (no .oil). Recursos impedem inversão de prioridade usando o protocolo \emph{Priority Ceiling}.
+
+\textit{Ver exemplo \texttt{04\_resource\_prodcons} na pasta \texttt{examples/}.}
+
+% === 14. Referência CAN ===========================================
+\section{Referência Rápida --- Comunicação CAN}
+
+\subsection{Configuração no arquivo OIL}
+
+Para usar CAN, adicione as bibliotecas \texttt{spi} e \texttt{mcp\_can}:
+
+\begin{lstlisting}[language=OIL]
+      LIBRARY = serial;
+      LIBRARY = spi;
+      LIBRARY = mcp_can;
+\end{lstlisting}
+
+\subsection{Inicialização}
+
+\begin{lstlisting}[language=C++]
+#include "Board.h"
+#include <mcp_can.h>
+
+MCP_CAN CAN1(CAN1_CS);  // chip select da placa
+
+void setup() {
+    Serial.begin(115200);
+    pinMode(CAN_INT, INPUT);
+    while (CAN1.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) != CAN_OK) {
+        delay(200);
+    }
+    CAN1.setMode(MCP_NORMAL);
+}
+\end{lstlisting}
+
+\subsection{Enviar mensagem}
+
+\begin{lstlisting}[language=C++]
+byte data[8] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+
+// Frame standard (11 bits)
+CAN1.sendMsgBuf(0x100, CAN_STDID, 8, data);
+
+// Frame extended (29 bits) — usado em J1939
+CAN1.sendMsgBuf(0x18FEF100, CAN_EXTID, 8, data);
+\end{lstlisting}
+
+\subsection{Receber mensagem}
+
+\begin{lstlisting}[language=C++]
+TASK(Receiver) {
+    if (!digitalRead(CAN_INT)) {    // há mensagem no buffer?
+        unsigned char dlc = 0;
+        unsigned char data[8];
+        long unsigned int id;
+
+        CAN1.readMsgBuf(&id, &dlc, data);
+
+        unsigned long canId = id & 0x1FFFFFFFUL;  // 29-bit ID
+        // data[0..dlc-1] contém os bytes da mensagem
+    }
+    TerminateTask();
+}
+\end{lstlisting}
+
+\subsection{Encapsular/Desencapsular sinais}
+
+Para encapsular um valor em bytes do frame CAN:
+
+\begin{lstlisting}[language=C++]
+// Encapsular: valor float -> bytes CAN com resolução
+float velocidade_kmh = 120.5;
+float resolucao = 1.0 / 256.0;  // 1/256 km/h por bit
+unsigned int raw = (unsigned int)(velocidade_kmh / resolucao);
+data[1] = (raw >> 8) & 0xFF;  // byte alto
+data[2] = raw & 0xFF;          // byte baixo
+\end{lstlisting}
+
+Para desencapsular:
+
+\begin{lstlisting}[language=C++]
+// Desencapsular: bytes CAN -> valor float
+unsigned int raw = ((unsigned int)data[1] << 8) | data[2];
+float velocidade_kmh = raw * resolucao;
+\end{lstlisting}
+
+\textit{Ver exemplo \texttt{05\_can\_basic} na pasta \texttt{examples/}.}
+
+% === 15. Exemplos do Repositório ==================================
+\section{Exemplos do Repositório}
+
+A pasta \texttt{examples/} do repositório contém projetos prontos para compilar. Copie para \texttt{C:\textbackslash ESA\textbackslash trampoline\textbackslash opt\textbackslash devel\textbackslash} e siga o guia da Seção~12.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{clX}
+  \toprule
+  \textbf{\#} & \textbf{Exemplo} & \textbf{Conceitos} \\
+  \midrule
+  01 & \texttt{blink} & Task + Alarm + \texttt{TerminateTask()} \\
+  02 & \texttt{multitask} & Múltiplas tasks com prioridades diferentes e preempção \\
+  03 & \texttt{alarm\_dynamic} & \texttt{SetRelAlarm()}, \texttt{CancelAlarm()}, mudança de período \\
+  04 & \texttt{prodcons} & \texttt{RESOURCE}, \texttt{GetResource()}, \texttt{ReleaseResource()}, produtor-consumidor \\
+  05 & \texttt{can\_basic} & TX + RX com MCP2515, \texttt{sendMsgBuf()}, \texttt{readMsgBuf()} \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+Cada exemplo contém arquivos \texttt{.oil} e \texttt{.cpp} prontos. Para projetos CAN, copie também \texttt{Board.h} do template.
+
+% === 16. Exemplo Prático: LED com Alarme ==========================
 \section{Exemplo Prático: LED Controlado por Alarme}
 
 Este exemplo cria uma tarefa no Trampoline que alterna um LED a cada 500\,ms usando um alarme do RTOS. \textbf{Diferente do blink básico}, este exemplo usa duas tarefas com prioridades distintas e comunicação via evento.

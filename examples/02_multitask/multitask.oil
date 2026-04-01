@@ -1,0 +1,77 @@
+// Example 02: Multiple tasks with different priorities and periods
+OIL_VERSION = "2.5" : "multitask";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "multitask.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM alarm1 {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = Task1; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 500;
+      CYCLETIME = 500;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  ALARM alarm2 {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = Task2; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 750;
+      CYCLETIME = 750;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  ALARM alarm3 {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = Task3; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 1200;
+      CYCLETIME = 1200;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK Task1 {
+    PRIORITY = 5;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+
+  TASK Task2 {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+
+  TASK Task3 {
+    PRIORITY = 15;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};
