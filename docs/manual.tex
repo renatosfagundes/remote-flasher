@@ -547,7 +547,7 @@ Adicione ao \texttt{.vscode/settings.json}:
 \subsection{Passo a passo}
 
 \begin{enumerate}[nosep]
-  \item Copie uma pasta de exemplo de \texttt{examples/} para \texttt{C:\textbackslash ESA\textbackslash trampoline\textbackslash opt\textbackslash devel\textbackslash <seu\_projeto>}
+  \item Copie uma pasta de exemplo de \texttt{examples/} para\\ \texttt{C:\textbackslash ESA\textbackslash trampoline\textbackslash opt\textbackslash devel\textbackslash <seu\_projeto>}
   \item Renomeie os arquivos \texttt{.oil} e \texttt{.cpp} com o nome do seu projeto
   \item Edite o \texttt{.oil}: atualize \texttt{APP\_SRC} para seu \texttt{.cpp}
   \item Edite o \texttt{.cpp}: implemente sua lógica
@@ -1289,7 +1289,9 @@ remote\_flasher/\\
 O Windows não associou arquivos \texttt{.py} ao Python. Execute em um \textbf{Prompt de Comando} (CMD) como administrador:
 \begin{codigobox}
 assoc .py=Python.File\\
-ftype Python.File="C:\textbackslash Users\textbackslash \%USERNAME\%\textbackslash AppData\textbackslash Local\textbackslash Programs\textbackslash Python\textbackslash Python311\textbackslash python.exe" "\%1" \%*
+ftype Python.File="C:\textbackslash Users\textbackslash \%USERNAME\%\textbackslash AppData\\
+\quad\textbackslash Local\textbackslash Programs\textbackslash Python\textbackslash Python311\\
+\quad\textbackslash python.exe" "\%1" \%*
 \end{codigobox}
 Alternativa: sempre use \texttt{python make.py} em vez de \texttt{make.py}.
 
