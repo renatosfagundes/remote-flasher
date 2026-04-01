@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from lab_config import COMPUTERS
 from settings import APP_DIR
 from workers import CameraWorker
-from tabs import VPNTab, FlashTab, SerialTab, SSHTerminalTab, SetupTab
+from tabs import VPNTab, FlashTab, CANTab, SerialTab, SSHTerminalTab, SetupTab
 
 
 class CameraPanel(QWidget):
@@ -99,12 +99,14 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.vpn_tab = VPNTab()
         self.flash_tab = FlashTab()
+        self.can_tab = CANTab()
         self.serial_tab = SerialTab()
         self.ssh_tab = SSHTerminalTab()
         self.setup_tab = SetupTab()
 
         self.tabs.addTab(self.vpn_tab, "VPN")
         self.tabs.addTab(self.flash_tab, "Flash")
+        self.tabs.addTab(self.can_tab, "CAN")
         self.tabs.addTab(self.serial_tab, "Serial")
         self.tabs.addTab(self.ssh_tab, "SSH Terminal")
         self.tabs.addTab(self.setup_tab, "Setup")
