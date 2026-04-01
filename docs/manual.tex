@@ -893,11 +893,17 @@ Ou use o Remote Flasher:
 % === 13. Exemplo: CAN com Trampoline =============================
 \section{Exemplo Prático: Comunicação CAN com RTOS}
 
-Este exemplo demonstra duas ECUs trocando mensagens CAN usando tarefas do Trampoline. \textbf{Diferente do exemplo da apostila}, aqui o transmissor envia dados de um potenciômetro e o receptor aciona um LED baseado no valor recebido.
+Este exemplo demonstra duas ECUs trocando mensagens CAN usando tarefas do Trampoline e controles \textbf{Virtual I/O}. O transmissor usa POT1/POT2 do painel GUI para definir valores e os envia via CAN. O receptor decodifica e mostra o resultado nos LEDs virtuais.
 
 \subsection{ECU Transmissora (can\_pot\_tx)}
 
 \begin{lstlisting}[language=OIL,caption={can\_pot\_tx.oil (trecho relevante)}]
+      APP_SRC = "can_pot_tx.cpp";
+      APP_SRC = "VirtualIO.cpp";
+      LIBRARY = serial;
+      LIBRARY = spi;
+      LIBRARY = mcp_can;
+
   ALARM sendAlarm {
     COUNTER = SystemCounter;
     ACTION = ACTIVATETASK { TASK = SendPotValue; };
@@ -921,55 +927,73 @@ Este exemplo demonstra duas ECUs trocando mensagens CAN usando tarefas do Trampo
 #include "tpl_os.h"
 #include "Arduino.h"
 #include "Board.h"
+#include "VirtualIO.h"
+#include <mcp_can.h>
 
 #define POT_ID 0x200
 MCP_CAN CAN1(CAN1_CS);
 
 void setup() {
   Serial.begin(115200);
-  pinMode(ECU1_AIN1, INPUT);
+  vioInit();
   while (CAN1.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) != CAN_OK) {
     delay(200);
   }
   CAN1.setMode(MCP_NORMAL);
-  Serial.println("CAN TX: Potentiometer sender ready.");
+  Serial.println("CAN TX ready. Use POT1 and POT2.");
 }
 
 TASK(SendPotValue) {
-  int potVal = analogRead(ECU1_AIN1);
-  byte data[2] = { highByte(potVal), lowByte(potVal) };
-  byte ret = CAN1.sendMsgBuf(POT_ID, CAN_STDID, 2, data);
+  vioUpdate();
+  int pot1 = vAnalogRead(VPOT1);
+  int pot2 = vAnalogRead(VPOT2);
+  byte data[4] = { highByte(pot1), lowByte(pot1),
+                    highByte(pot2), lowByte(pot2) };
+  byte ret = CAN1.sendMsgBuf(POT_ID, CAN_STDID, 4, data);
   if (ret == CAN_OK) {
-    Serial.print("TX pot=");
-    Serial.println(potVal);
+    Serial.print("TX pot1=");
+    Serial.print(pot1);
+    Serial.print(" pot2=");
+    Serial.println(pot2);
   }
+  TerminateTask();
 }
 \end{lstlisting}
 
 \subsection{ECU Receptora (can\_pot\_rx)}
 
 \begin{lstlisting}[language=C++,caption={can\_pot\_rx.cpp (trecho relevante)}]
+#include "VirtualIO.h"
+
 TASK(ReceiveAndAct) {
+  vioUpdate();
   if (!digitalRead(CAN_INT)) {
     unsigned char dlc = 0;
     unsigned char data[8];
     long unsigned int id;
     CAN1.readMsgBuf(&id, &dlc, data);
 
-    if ((id & CAN_EXTENDED_ID) == POT_ID && dlc >= 2) {
-      int potVal = (data[0] << 8) | data[1];
-      Serial.print("RX pot=");
-      Serial.println(potVal);
+    if ((id & 0x1FFFFFFF) == POT_ID && dlc >= 4) {
+      int pot1 = (data[0] << 8) | data[1];
+      int pot2 = (data[2] << 8) | data[3];
 
-      // Aciona LED se pot > 512 (metade da faixa)
-      digitalWrite(ECU2_DOUT1, potVal > 512 ? HIGH : LOW);
+      // LEDs virtuais mostram os valores recebidos
+      vLedWrite(VLED1, pot1 / 4);  // vermelho = pot1
+      vLedWrite(VLED2, pot2 / 4);  // azul = pot2
+      vLedWrite(VLED3, 255);       // verde = CAN ativo
+
+      Serial.print("RX pot1=");
+      Serial.print(pot1);
+      Serial.print(" pot2=");
+      Serial.println(pot2);
     }
   }
+  TerminateTask();
 }
 \end{lstlisting}
 
 \begin{dicabox}
-Use duas janelas seriais no Remote Flasher (aba Serial, ``+ Add Serial'') para monitorar TX e RX simultaneamente. O autoscroll pode ser desativado para analisar os frames CAN com calma.
+Abra duas janelas seriais no Remote Flasher: TX em um painel (mova POT1/POT2) e RX no outro (observe os LEDs virtuais mudando de brilho). Faça o upload de \texttt{serialterm.py} antes de conectar.
 \end{dicabox}
 
 % === 14. Virtual I/O =============================================
