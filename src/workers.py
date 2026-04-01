@@ -271,15 +271,20 @@ class SerialWorker(QThread):
                 password=self.password,
                 timeout=15,
             )
+            # Use full path to run serialterm.py — avoids cd issues over SSH.
+            # The "if not exist" must be wrapped in cmd /c to prevent it from
+            # swallowing subsequent commands when the file already exists.
+            remote_script = f"{self.remote_dir}\\serialterm.py"
             cmd = (
-                f"mkdir {self.remote_dir} >nul 2>&1"
-                f" & cd {self.remote_dir}"
-                f" && copy {REMOTE_BASE_DIR}\\serialterm.py . >nul 2>&1"
-                f" & python serialterm.py --port {self.com_port} --baudrate {self.baudrate}"
+                f"cmd /c \"if not exist {remote_script}"
+                f" (mkdir {self.remote_dir} >nul 2>&1"
+                f" ^& copy {REMOTE_BASE_DIR}\\serialterm.py {remote_script} >nul 2>&1)\""
+                f" & python -u {remote_script} --port {self.com_port} --baudrate {self.baudrate}"
             )
             self.output.emit(f"[Serial] Running: {cmd}")
             self._channel = self._client.get_transport().open_session()
-            self._channel.get_pty()
+            # No PTY — use python -u for unbuffered output instead.
+            # PTY echoes back stdin which corrupts VirtualIO commands.
             self._channel.exec_command(cmd)
             while self._running:
                 if self._channel.recv_ready():

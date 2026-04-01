@@ -31,10 +31,18 @@ def _reader(ser):
 def _writer(ser):
     """Read from stdin and write to serial."""
     try:
-        for line in sys.stdin:
-            line = line.rstrip("\r\n")
-            ser.write((line + "\r\n").encode("utf-8"))
-            ser.flush()
+        buf = ""
+        while True:
+            ch = sys.stdin.read(1)
+            if not ch:
+                break
+            if ch in ("\n", "\r"):
+                if buf:
+                    ser.write((buf + "\r\n").encode("utf-8"))
+                    ser.flush()
+                    buf = ""
+            else:
+                buf += ch
     except (serial.SerialException, OSError, EOFError):
         pass
 

@@ -12,6 +12,7 @@ A PySide6 desktop application for remotely flashing Arduino boards over VPN + SS
 - **Firmware Flashing** — Upload `.hex` files via SCP and flash using `avrdude` over SSH
 - **Board Reset** — Trigger board reset via PowerShell scripts on the remote PC
 - **Multi-Serial Terminal** — Up to 4 simultaneous serial connections with spatial layout (side-by-side, 2+1, 2x2 grid), bidirectional send, autoscroll toggle, and port exclusion
+- **Virtual I/O** — 4 buttons, 4 LEDs, and 2 potentiometers per serial panel. Buttons and pots send commands to the Arduino; LEDs are controlled by the firmware. Includes Arduino library (`VirtualIO.h`)
 - **SSH Terminal + SFTP Upload** — Run commands and upload files/folders to the remote PC with progress tracking
 - **Live Camera** — View the lab camera feed (collapsible side panel, auto-resizes with serial panel count)
 - **Environment Setup** — One-click installation of Arduino CLI, AVR Toolchain, Trampoline RTOS, goil, MCP_CAN
@@ -99,6 +100,10 @@ Go to the **Serial** tab. Click **"+ Add Serial"** for up to 4 simultaneous conn
 
 Each panel supports sending commands, has an autoscroll toggle, and connected ports are excluded from other panels.
 
+**Virtual I/O:** Each serial panel includes virtual buttons (B1-B4), LEDs (L1-L4), and potentiometers (POT1-POT2). Use these to interact with your firmware remotely — buttons and pots send commands to the Arduino, LEDs are controlled by the firmware via `vLedWrite()`. Click **"Upload serialterm.py"** once before connecting to enable bidirectional communication.
+
+The `arduino_lib/VirtualIO/` folder contains the Arduino library (`VirtualIO.h`, `VirtualIO.cpp`) to include in your Trampoline projects.
+
 ### 4. SSH Terminal + File Upload
 
 Run commands on the remote PC and upload files or entire folders via SFTP with a progress bar.
@@ -126,6 +131,10 @@ remote_flasher/
       serial_tab.py     # Multi-serial terminal (up to 4)
       ssh_tab.py        # SSH commands + SFTP upload
       setup_tab.py      # Environment setup + IDE guides
+  arduino_lib/
+    VirtualIO/
+      VirtualIO.h       # Virtual I/O Arduino library (header)
+      VirtualIO.cpp     # Virtual I/O Arduino library (implementation)
   assets/icon.ico
   docs/
     manual.tex          # User manual in pt-BR (compile with tectonic)

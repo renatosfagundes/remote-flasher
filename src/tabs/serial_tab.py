@@ -1,16 +1,276 @@
 """Serial terminal tab — up to 4 independent connections with spatial layout."""
 import os
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QComboBox, QLineEdit, QFrame, QSplitter, QCheckBox,
+    QSlider, QGroupBox,
 )
 
 from lab_config import COMPUTERS, SERIAL_DEFAULTS
 from settings import get_remote_user_dir
 from widgets import LogWidget
 from workers import SerialWorker, SCPWorker
+
+
+# ---------------------------------------------------------------------------
+# Virtual I/O Panel
+# ---------------------------------------------------------------------------
+
+class VirtualIOPanel(QFrame):
+    """Virtual I/O: 4 buttons (input) + 4 LEDs (output) + 2 potentiometers (input).
+
+    Protocol — GUI → Arduino (inputs):
+        !B1:1 / !B1:0   — button pressed / released
+        !P1:512          — potentiometer value (0–1023)
+
+    Protocol — Arduino → GUI (outputs):
+        !L1:1 / !L1:0   — LED on / off
+        !L1:128          — LED brightness (0–255, 0=off)
+    """
+    command = Signal(str)  # emits the command string to send
+
+    # LED colors (matching button colors)
+    _LED_COLORS = ["#e74c3c", "#3498db", "#f1c40f", "#2ecc71"]  # red, blue, yellow, green
+    _BTN_COLORS = ["#c0392b", "#2980b9", "#f39c12", "#27ae60"]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setStyleSheet(
+            "VirtualIOPanel { border: 1px solid #444; border-radius: 3px; "
+            "background: #2a2a2a; }"
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(8)
+
+        # --- Buttons (round, 3D pushbutton style) ---
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(6)
+        self._buttons = []
+        self._btn_states = [False] * 4
+        for i in range(4):
+            btn_col = QVBoxLayout()
+            btn_col.setSpacing(2)
+            btn_col.setAlignment(Qt.AlignCenter)
+
+            btn = QPushButton()
+            btn.setCheckable(True)
+            btn.setFixedSize(36, 36)
+            btn.setStyleSheet(self._btn_style(False, self._BTN_COLORS[i]))
+            btn.toggled.connect(
+                lambda checked, idx=i, c=self._BTN_COLORS[i]: self._on_btn_toggle(idx, checked, c)
+            )
+            btn_col.addWidget(btn, alignment=Qt.AlignCenter)
+
+            lbl = QLabel(f"B{i+1}")
+            lbl.setStyleSheet("color: #888; font-size: 9px; font-weight: bold;")
+            lbl.setAlignment(Qt.AlignCenter)
+            btn_col.addWidget(lbl)
+
+            btn_layout.addLayout(btn_col)
+            self._buttons.append(btn)
+        layout.addLayout(btn_layout)
+
+        # Separator
+        layout.addWidget(self._make_separator())
+
+        # --- LEDs (round indicators, controlled by Arduino) ---
+        led_layout = QHBoxLayout()
+        led_layout.setSpacing(6)
+        self._leds = []
+        self._led_values = [0] * 4
+        for i in range(4):
+            led_col = QVBoxLayout()
+            led_col.setSpacing(2)
+            led_col.setAlignment(Qt.AlignCenter)
+
+            led = QLabel()
+            led.setFixedSize(20, 20)
+            led.setStyleSheet(self._led_style(0, self._LED_COLORS[i]))
+            led_col.addWidget(led, alignment=Qt.AlignCenter)
+
+            lbl = QLabel(f"L{i+1}")
+            lbl.setStyleSheet("color: #888; font-size: 9px; font-weight: bold;")
+            lbl.setAlignment(Qt.AlignCenter)
+            led_col.addWidget(lbl)
+
+            led_layout.addLayout(led_col)
+            self._leds.append(led)
+        layout.addLayout(led_layout)
+
+        # Separator
+        layout.addWidget(self._make_separator())
+
+        # --- Potentiometers ---
+        self._sliders = []
+        self._slider_labels = []
+        self._throttle_timers = []
+        for i in range(2):
+            pot_layout = QVBoxLayout()
+            pot_layout.setSpacing(1)
+
+            label = QLabel(f"POT{i+1}: 0")
+            label.setStyleSheet("color: #aaa; font-size: 10px;")
+            label.setAlignment(Qt.AlignCenter)
+            label.setFixedWidth(90)
+            pot_layout.addWidget(label)
+
+            slider = QSlider(Qt.Horizontal)
+            slider.setRange(0, 1023)
+            slider.setValue(0)
+            slider.setFixedWidth(90)
+            slider.setStyleSheet(
+                "QSlider::groove:horizontal { background: #3c3c3c; height: 6px; "
+                "border-radius: 3px; }"
+                "QSlider::handle:horizontal { background: #0d47a1; width: 14px; "
+                "margin: -4px 0; border-radius: 7px; }"
+                "QSlider::sub-page:horizontal { background: #1565c0; border-radius: 3px; }"
+            )
+
+            timer = QTimer()
+            timer.setSingleShot(True)
+            timer.setInterval(50)
+            timer.timeout.connect(lambda idx=i: self._send_pot(idx))
+            self._throttle_timers.append(timer)
+
+            slider.valueChanged.connect(
+                lambda val, idx=i, lbl=label: self._on_slider_change(idx, val, lbl)
+            )
+            pot_layout.addWidget(slider)
+
+            layout.addLayout(pot_layout)
+            self._sliders.append(slider)
+            self._slider_labels.append(label)
+
+        layout.addStretch()
+
+    @staticmethod
+    def _make_separator():
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setStyleSheet("color: #555;")
+        return sep
+
+    @staticmethod
+    def _btn_style(pressed, color="#c0392b"):
+        if pressed:
+            return (
+                f"QPushButton {{"
+                f"  background: qradialgradient(cx:0.5, cy:0.5, radius:0.7, "
+                f"    fx:0.5, fy:0.6, stop:0 {color}, stop:1 #1a1a1a);"
+                f"  border: 3px solid #111;"
+                f"  border-radius: 18px;"
+                f"  padding: 0;"
+                f"}}"
+            )
+        return (
+            f"QPushButton {{"
+            f"  background: qradialgradient(cx:0.4, cy:0.35, radius:0.8, "
+            f"    fx:0.4, fy:0.3, stop:0 #666, stop:0.6 #3c3c3c, stop:1 #222);"
+            f"  border: 2px solid #555;"
+            f"  border-radius: 18px;"
+            f"  padding: 0;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: qradialgradient(cx:0.4, cy:0.35, radius:0.8, "
+            f"    fx:0.4, fy:0.3, stop:0 #888, stop:0.6 #4a4a4a, stop:1 #2a2a2a);"
+            f"  border-color: #777;"
+            f"}}"
+        )
+
+    @staticmethod
+    def _led_style(brightness, color="#e74c3c"):
+        """Generate LED style — off (dim) to on (glowing) based on brightness 0–255."""
+        if brightness == 0:
+            return (
+                "QLabel {"
+                "  background: qradialgradient(cx:0.5, cy:0.5, radius:0.6, "
+                "    fx:0.5, fy:0.5, stop:0 #333, stop:1 #1a1a1a);"
+                "  border: 2px solid #222;"
+                "  border-radius: 10px;"
+                "}"
+            )
+        # Scale the glow: blend from dim color to bright with white center
+        t = brightness / 255.0  # 0.0 to 1.0
+        # Parse hex color to RGB for blending
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+        # Dim version (30% of color)
+        dr, dg, db = int(r * 0.3), int(g * 0.3), int(b * 0.3)
+        # Interpolate center color between dim and full
+        cr = int(dr + (r - dr) * t)
+        cg = int(dg + (g - dg) * t)
+        cb = int(db + (b - db) * t)
+        center = f"#{cr:02x}{cg:02x}{cb:02x}"
+        # White highlight only at high brightness
+        highlight = f"#{min(255,cr+int(80*t)):02x}{min(255,cg+int(80*t)):02x}{min(255,cb+int(80*t)):02x}"
+        # Border brightness
+        br_border = f"#{int(r*t):02x}{int(g*t):02x}{int(b*t):02x}"
+        return (
+            f"QLabel {{"
+            f"  background: qradialgradient(cx:0.5, cy:0.4, radius:0.6, "
+            f"    fx:0.5, fy:0.35, stop:0 {highlight}, stop:0.3 {center}, stop:1 #1a1a1a);"
+            f"  border: 2px solid {br_border};"
+            f"  border-radius: 10px;"
+            f"}}"
+        )
+
+    def _on_btn_toggle(self, idx, checked, color="#c0392b"):
+        self._btn_states[idx] = checked
+        self._buttons[idx].setStyleSheet(self._btn_style(checked, color))
+        self.command.emit(f"!B{idx+1}:{1 if checked else 0}")
+
+    def _on_slider_change(self, idx, value, label):
+        label.setText(f"POT{idx+1}: {value}")
+        self._throttle_timers[idx].start()
+
+    def _send_pot(self, idx):
+        value = self._sliders[idx].value()
+        self.command.emit(f"!P{idx+1}:{value}")
+
+    def set_led(self, idx, brightness):
+        """Set a virtual LED brightness (0–255). Called when Arduino sends !Ln:value."""
+        if 0 <= idx < 4:
+            self._led_values[idx] = brightness
+            self._leds[idx].setStyleSheet(
+                self._led_style(brightness, self._LED_COLORS[idx])
+            )
+
+    def parse_output_line(self, line):
+        """Parse a serial output line for LED commands (!L1:255). Returns True if consumed."""
+        line = line.strip()
+        if line.startswith("!L") and ":" in line and len(line) >= 5:
+            try:
+                idx = int(line[2]) - 1
+                value = int(line[4:])
+                self.set_led(idx, max(0, min(255, value)))
+                return True
+            except (ValueError, IndexError):
+                pass
+        return False
+
+    def setEnabled(self, enabled):
+        super().setEnabled(enabled)
+        for btn in self._buttons:
+            btn.setEnabled(enabled)
+        for slider in self._sliders:
+            slider.setEnabled(enabled)
+
+    def reset(self):
+        """Reset all controls to default state."""
+        for i, btn in enumerate(self._buttons):
+            btn.setChecked(False)
+            self._btn_states[i] = False
+        for slider in self._sliders:
+            slider.setValue(0)
+        for i in range(4):
+            self._led_values[i] = 0
+            self._leds[i].setStyleSheet(self._led_style(0, self._LED_COLORS[i]))
 
 
 class SerialPanel(QFrame):
@@ -107,6 +367,12 @@ class SerialPanel(QFrame):
         send_row.addWidget(self.send_btn)
         layout.addLayout(send_row)
 
+        # --- Virtual I/O panel ---
+        self.vio_panel = VirtualIOPanel()
+        self.vio_panel.setEnabled(False)
+        self.vio_panel.command.connect(self._send_vio_command)
+        layout.addWidget(self.vio_panel)
+
         self.serial_worker = None
         self._on_pc_changed(self.pc_combo.currentText())
 
@@ -152,6 +418,7 @@ class SerialPanel(QFrame):
         self.connect_btn.setText("Close Serial")
         self.send_input.setEnabled(True)
         self.send_btn.setEnabled(True)
+        self.vio_panel.setEnabled(True)
         self.pc_combo.setEnabled(False)
         self.board_combo.setEnabled(False)
         self.port_combo.setEnabled(False)
@@ -160,7 +427,7 @@ class SerialPanel(QFrame):
         self.serial_worker = SerialWorker(
             pc["host"], pc["user"], pc["password"], port, baud, remote_dir
         )
-        self.serial_worker.output.connect(self.log.append_log)
+        self.serial_worker.output.connect(self._on_serial_output)
         self.serial_worker.finished_signal.connect(self._on_serial_done)
         self._workers.append(self.serial_worker)
         self.serial_worker.start()
@@ -175,6 +442,17 @@ class SerialPanel(QFrame):
         self.log.append_log(f"> {text}")
         self.serial_worker.send_data(text)
         self.send_input.clear()
+
+    def _on_serial_output(self, line):
+        """Intercept serial output — parse VIO LED commands, pass rest to log."""
+        if not self.vio_panel.parse_output_line(line):
+            self.log.append_log(line)
+
+    def _send_vio_command(self, cmd):
+        """Send a Virtual I/O command (from buttons/sliders)."""
+        if not self.serial_worker:
+            return
+        self.serial_worker.send_data(cmd)
 
     def _upload_serialterm(self):
         pc = self._get_pc_cfg()
@@ -201,6 +479,8 @@ class SerialPanel(QFrame):
         self.connect_btn.setText("Open Serial")
         self.send_input.setEnabled(False)
         self.send_btn.setEnabled(False)
+        self.vio_panel.setEnabled(False)
+        self.vio_panel.reset()
         self.pc_combo.setEnabled(True)
         self.board_combo.setEnabled(True)
         self.port_combo.setEnabled(True)

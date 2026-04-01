@@ -343,6 +343,28 @@ Desmarque a caixa \textbf{``Autoscroll''} para congelar a posição do scroll en
 
 Quando um painel está conectado a uma porta COM, essa porta não aparece nos menus dos outros painéis, evitando conflitos.
 
+\subsection{Upload do serialterm.py}
+
+Na primeira utilização, clique em \textbf{``Upload serialterm.py''} em qualquer painel serial \textbf{antes} de conectar. Isso envia a versão bidirecional do script para o PC remoto. Só é necessário fazer isso uma vez --- o arquivo é reutilizado por todas as conexões do mesmo PC.
+
+\begin{notabox}[Importante]
+Se o script remoto for antigo (versão somente leitura), os controles Virtual I/O não funcionarão. Sempre faça o upload ao usar uma versão nova do Remote Flasher.
+\end{notabox}
+
+\subsection{Virtual I/O --- Controles integrados}
+
+Cada painel serial possui um painel de \textbf{Virtual I/O} na parte inferior com:
+
+\begin{itemize}[nosep]
+  \item \textbf{4 botões} (B1--B4) --- redondo, 3D, com cores distintas. Clique para pressionar/soltar.
+  \item \textbf{4 LEDs} (L1--L4) --- indicadores que o firmware controla remotamente. O brilho varia de 0 (apagado) a 255 (máximo).
+  \item \textbf{2 potenciômetros} (POT1, POT2) --- sliders de 0 a 1023 que enviam valores ao firmware.
+\end{itemize}
+
+Os controles ficam ativos somente quando a conexão serial está aberta. Ao desconectar, todos voltam ao estado inicial.
+
+Para utilizar o Virtual I/O no firmware, inclua a biblioteca \texttt{VirtualIO.h} (disponível em \texttt{arduino\_lib/VirtualIO/}). Veja a Seção~\ref{sec:virtualio} para detalhes do protocolo e exemplos.
+
 % === 8. Terminal SSH + Upload SFTP ===============================
 \section{Terminal SSH e Upload de Arquivos}
 
@@ -730,7 +752,248 @@ TASK(ReceiveAndAct) {
 Use duas janelas seriais no Remote Flasher (aba Serial, ``+ Add Serial'') para monitorar TX e RX simultaneamente. O autoscroll pode ser desativado para analisar os frames CAN com calma.
 \end{dicabox}
 
-% === 14. Configuração dos PCs ====================================
+% === 14. Virtual I/O =============================================
+\section{Virtual I/O --- Controles Remotos}
+\label{sec:virtualio}
+
+Cada painel serial possui um painel de \textbf{Virtual I/O} com 4 botões e 2 potenciômetros virtuais. Esses controles enviam comandos pela porta serial, permitindo simular entradas físicas sem acesso à placa.
+
+\subsection{Protocolo}
+
+\begin{center}
+\begin{tabular}{lll}
+  \toprule
+  \textbf{Comando} & \textbf{Significado} & \textbf{Exemplo} \\
+  \midrule
+  \texttt{!B1:1} & Botão 1 pressionado & Envia ao pressionar BTN1 \\
+  \texttt{!B1:0} & Botão 1 solto & Envia ao soltar BTN1 \\
+  \texttt{!P1:512} & Potenciômetro 1 = 512 & Envia ao mover slider POT1 \\
+  \texttt{!P2:0} & Potenciômetro 2 = 0 & Faixa: 0--1023 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+O prefixo \texttt{!} diferencia comandos VIO de texto normal. Os sliders possuem \emph{throttle} de 50\,ms para evitar sobrecarga na serial.
+
+\subsection{LEDs Virtuais (saídas)}
+
+Além dos controles de entrada, cada painel possui 4 \textbf{LEDs virtuais} (L1--L4) que o Arduino pode controlar. Os LEDs aparecem entre os botões e os potenciômetros, com cores correspondentes (vermelho, azul, amarelo, verde).
+
+O firmware envia comandos pela serial para atualizar os LEDs:
+
+\begin{center}
+\begin{tabular}{lll}
+  \toprule
+  \textbf{Comando} & \textbf{Significado} & \textbf{Exemplo} \\
+  \midrule
+  \texttt{!L1:1} & LED 1 ligado & \texttt{vLedWrite(VLED1, 1)} \\
+  \texttt{!L1:0} & LED 1 desligado & \texttt{vLedWrite(VLED1, 0)} \\
+  \texttt{!L2:128} & LED 2 meio brilho & \texttt{vLedWrite(VLED2, 128)} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+A função \texttt{vLedWrite()} só envia o comando quando o valor muda, evitando sobrecarregar a serial.
+Os comandos \texttt{!L} são interceptados pelo Remote Flasher e \textbf{não aparecem no log} --- apenas atualizam os indicadores visuais.
+
+\subsection{Biblioteca Arduino: VirtualIO}
+
+Para usar os controles virtuais, copie os arquivos \texttt{VirtualIO.h} e \texttt{VirtualIO.cpp} (disponíveis em \texttt{arduino\_lib/VirtualIO/}) para a pasta do seu projeto. A biblioteca ocupa apenas 6 bytes de RAM e tem overhead desprezível.
+
+\begin{lstlisting}[language=C++,caption={API da biblioteca VirtualIO}]
+#include "VirtualIO.h"
+
+void setup() {
+  Serial.begin(115200);
+  vioInit();  // inicializa o sistema de I/O virtual
+}
+
+TASK(MinhaTask) {
+  vioUpdate();  // lê comandos pendentes da serial (leve, retorna imediato)
+
+  // Ler botões virtuais (retorna 0 ou 1)
+  if (vRead(VBTN1)) { /* BTN1 está pressionado */ }
+  if (vRead(VBTN3)) { /* BTN3 está pressionado */ }
+
+  // Ler potenciômetros virtuais (retorna 0–1023)
+  int valor = vAnalogRead(VPOT1);
+}
+\end{lstlisting}
+
+\begin{notabox}[Importante]
+Chame \texttt{vioUpdate()} no início de qualquer task que use os controles virtuais. A função é leve --- retorna imediatamente se não há dados na serial.
+\end{notabox}
+
+\subsection{Exemplo 1: LED controlado por botão e brilho por potenciômetro}
+
+Este exemplo usa o BTN1 virtual para ligar/desligar um LED e o POT1 para controlar o brilho via PWM.
+
+\begin{lstlisting}[language=OIL,caption={vio\_led.oil}]
+OIL_VERSION = "2.5" : "vio_led";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "vio_led.cpp";
+      APP_SRC = "VirtualIO.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER = "avr-gcc";
+      LINKER = "avr-gcc";
+      ASSEMBLER = "avr-gcc";
+      COPIER = "avr-objcopy";
+      SYSTEM = PYTHON;
+      LIBRARY = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM controlAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = ControlLed; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 100;
+      CYCLETIME = 100;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK ControlLed {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};
+\end{lstlisting}
+
+\begin{lstlisting}[language=C++,caption={vio\_led.cpp}]
+#include "tpl_os.h"
+#include "Arduino.h"
+#include "VirtualIO.h"
+
+#define LED_PIN 3  // PWM pin (physical)
+
+void setup() {
+  Serial.begin(115200);
+  vioInit();
+  pinMode(LED_PIN, OUTPUT);
+  Serial.println("VIO LED example ready.");
+  Serial.println("BTN1=toggle, POT1=brightness, BTN2=LED2 blink");
+}
+
+TASK(ControlLed) {
+  vioUpdate();
+
+  if (vRead(VBTN1)) {
+    // BTN1 pressed: physical + virtual LED on, brightness from POT1
+    int brightness = vAnalogRead(VPOT1) / 4;  // 0-1023 -> 0-255
+    analogWrite(LED_PIN, brightness);
+    vLedWrite(VLED1, brightness);    // mirror on GUI LED 1
+  } else {
+    analogWrite(LED_PIN, 0);
+    vLedWrite(VLED1, 0);             // GUI LED 1 off
+  }
+
+  // BTN2: toggle GUI LED 2 (no physical counterpart)
+  vLedWrite(VLED2, vRead(VBTN2) ? 255 : 0);
+
+  // LED 3 shows POT2 as a bar (brightness proportional to pot)
+  vLedWrite(VLED3, vAnalogRead(VPOT2) / 4);
+}
+\end{lstlisting}
+
+\textbf{Para testar:}
+\begin{enumerate}[nosep]
+  \item Compile e grave o firmware no Arduino
+  \item Abra a conexão serial no Remote Flasher
+  \item Pressione \textbf{BTN1} --- o LED físico acende e o \textbf{LED 1} virtual fica vermelho
+  \item Mova \textbf{POT1} --- o brilho do LED físico e virtual muda em tempo real
+  \item Pressione \textbf{BTN2} --- o \textbf{LED 2} virtual (azul) acende
+  \item Mova \textbf{POT2} --- o \textbf{LED 3} virtual (amarelo) muda de brilho
+\end{enumerate}
+
+\subsection{Exemplo 2: CAN com controles virtuais}
+
+Este exemplo envia mensagens CAN cujo conteúdo é controlado pelos botões e potenciômetros virtuais. A ECU transmissora usa BTN1--BTN4 como flags de status e POT1/POT2 como valores analógicos no frame CAN.
+
+\begin{lstlisting}[language=C++,caption={vio\_can\_tx.cpp (trecho relevante)}]
+#include "tpl_os.h"
+#include "Arduino.h"
+#include "Board.h"
+#include "VirtualIO.h"
+
+#define MSG_ID 0x300
+MCP_CAN CAN1(CAN1_CS);
+
+void setup() {
+  Serial.begin(115200);
+  vioInit();
+  while (CAN1.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) != CAN_OK) {
+    delay(200);
+  }
+  CAN1.setMode(MCP_NORMAL);
+  Serial.println("VIO CAN TX ready. Use BTN1-4 and POT1-2.");
+}
+
+TASK(SendFrame) {
+  vioUpdate();
+
+  byte data[8];
+  // Bytes 0-3: button states
+  data[0] = vRead(VBTN1);
+  data[1] = vRead(VBTN2);
+  data[2] = vRead(VBTN3);
+  data[3] = vRead(VBTN4);
+  // Bytes 4-5: POT1 (high byte, low byte)
+  int pot1 = vAnalogRead(VPOT1);
+  data[4] = highByte(pot1);
+  data[5] = lowByte(pot1);
+  // Bytes 6-7: POT2
+  int pot2 = vAnalogRead(VPOT2);
+  data[6] = highByte(pot2);
+  data[7] = lowByte(pot2);
+
+  CAN1.sendMsgBuf(MSG_ID, CAN_STDID, 8, data);
+
+  Serial.print("TX: BTN=");
+  Serial.print(data[0]); Serial.print(data[1]);
+  Serial.print(data[2]); Serial.print(data[3]);
+  Serial.print(" POT1="); Serial.print(pot1);
+  Serial.print(" POT2="); Serial.println(pot2);
+}
+\end{lstlisting}
+
+\begin{dicabox}
+Abra duas janelas seriais: uma para o TX (onde você controla os botões e pots virtuais) e outra para o RX (onde você vê os dados recebidos via CAN). Isso simula um painel de controle completo sem acesso físico à placa.
+\end{dicabox}
+
+\subsection{Exemplo 3: Leitura mista (virtual + real)}
+
+A biblioteca pode ser usada em conjunto com entradas físicas. Se o aluno tem acesso remoto à placa mas quer \emph{complementar} os sensores físicos com controles virtuais:
+
+\begin{lstlisting}[language=C++,caption={Leitura mista: virtual + real}]
+TASK(ReadInputs) {
+  vioUpdate();
+
+  // Botões: usa virtual se pressionado, senão lê o físico
+  bool btn1 = vRead(VBTN1) || digitalRead(ECU1_DIN1);
+
+  // Potenciômetro: soma virtual + real (com clamp)
+  int pot = analogRead(ECU1_AIN1) + vAnalogRead(VPOT1);
+  if (pot > 1023) pot = 1023;
+
+  Serial.print("btn1="); Serial.print(btn1);
+  Serial.print(" pot="); Serial.println(pot);
+}
+\end{lstlisting}
+
+% === 15. Configuração dos PCs ====================================
 \section{Configuração dos PCs do Laboratório}
 
 \begin{center}

@@ -139,9 +139,19 @@ class SetupInstallWorker(QThread):
                             python = found[0]
                             break
                 if not python:
-                    raise FileNotFoundError(
-                        "Python interpreter not found. Install Python and ensure it's in PATH."
-                    )
+                    self.output.emit("[ERROR] Python not found on this computer!")
+                    self.output.emit("")
+                    self.output.emit("The environment setup requires Python 3 to be installed.")
+                    self.output.emit("Please download and install it from:")
+                    self.output.emit("")
+                    self.output.emit("  https://www.python.org/downloads/")
+                    self.output.emit("")
+                    self.output.emit("IMPORTANT: During installation, check the box:")
+                    self.output.emit('  [x] "Add Python to PATH"')
+                    self.output.emit("")
+                    self.output.emit("After installing Python, restart Remote Flasher and try again.")
+                    self.finished_signal.emit(1)
+                    return
             else:
                 python = sys.executable
             proc = subprocess.Popen(
