@@ -1,8 +1,9 @@
 """
-Reusable UI widgets — LogWidget, StatusIndicator.
+Reusable UI widgets — LogWidget, StatusIndicator, log_with_clear_button.
 """
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QPlainTextEdit, QLabel
+from PySide6.QtWidgets import QPlainTextEdit, QLabel, QHBoxLayout, QPushButton, QWidget, QVBoxLayout
 
 
 class LogWidget(QPlainTextEdit):
@@ -30,6 +31,29 @@ class LogWidget(QPlainTextEdit):
         self.appendPlainText(text)
         if self._autoscroll:
             self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+
+
+def make_log_with_clear(parent_layout, max_height=None):
+    """Create a LogWidget with a 'Clear Log' button and add to parent_layout.
+    Returns the LogWidget instance."""
+    header = QHBoxLayout()
+    header.addStretch()
+    clear_btn = QPushButton("Clear Log")
+    clear_btn.setFixedHeight(22)
+    clear_btn.setStyleSheet(
+        "QPushButton { background: #333; color: #aaa; border: 1px solid #555; "
+        "border-radius: 2px; padding: 2px 10px; font-size: 10px; }"
+        "QPushButton:hover { background: #444; color: #ddd; }"
+    )
+    header.addWidget(clear_btn)
+    parent_layout.addLayout(header)
+
+    log = LogWidget()
+    if max_height:
+        log.setMaximumHeight(max_height)
+    clear_btn.clicked.connect(log.clear)
+    parent_layout.addWidget(log)
+    return log
 
 
 class StatusIndicator(QLabel):

@@ -8,17 +8,10 @@ from PySide6.QtWidgets import (
 )
 
 from lab_config import COMPUTERS
-from widgets import LogWidget
+from widgets import LogWidget, make_log_with_clear
 from workers import SSHWorker
 
 
-# CAN selector port mapping — same ports as reset
-_CAN_SELECTOR_PORTS = {
-    "Placa 01": "reset_port",
-    "Placa 02": "reset_port",
-    "Placa 03": "reset_port",
-    "Placa 04": "reset_port",
-}
 
 
 class BusTopologyWidget(QWidget):
@@ -37,8 +30,10 @@ class BusTopologyWidget(QWidget):
             "Placa 04": QColor("#27ae60"),
         }
 
-    def set_board_states(self, states: dict):
+    def set_board_states(self, states: dict, available: dict = None):
+        """Update board positions. available = {board_name: bool} for which boards have selectors."""
         self._board_states = dict(states)
+        self._available = available or {k: True for k in states}
         self.update()
 
     def paintEvent(self, event):
@@ -94,42 +89,64 @@ class BusTopologyWidget(QWidget):
 
         for i, board_name in enumerate(boards):
             bx = int(bus_x_start + spacing * (i + 1))
-            bus_num = self._board_states.get(board_name, 1)
-            bus_y = bus_y1 if bus_num == 1 else bus_y2
+            has_selector = self._available.get(board_name, True)
             color = self._board_colors.get(board_name, QColor("#888"))
 
-            # Board box
             box_w, box_h = 70, 30
             box_x = bx - box_w // 2
 
-            # Position box above or below the bus line
-            if bus_num == 1:
-                box_y = int(bus_y - box_h - 12)
+            if not has_selector:
+                # No CAN selector — show greyed out between the two buses
+                mid_y = (bus_y1 + bus_y2) / 2
+                box_y = int(mid_y - box_h / 2)
+                grey = QColor("#444")
+
+                # Dashed line to indicate unknown connection
+                dash_pen = QPen(grey, 1, Qt.DashLine)
+                p.setPen(dash_pen)
+                p.drawLine(bx, int(bus_y1), bx, box_y)
+                p.drawLine(bx, box_y + box_h, bx, int(bus_y2))
+
+                # Grey box with "?"
+                p.setPen(QPen(grey, 2))
+                p.setBrush(QBrush(QColor(60, 60, 60, 100)))
+                p.drawRoundedRect(box_x, box_y, box_w, box_h, 5, 5)
+
+                p.setPen(QColor("#666"))
+                ecu_label = board_name.replace("Placa ", "P") + " ?"
+                p.drawText(box_x, box_y, box_w, box_h, Qt.AlignCenter, ecu_label)
             else:
-                box_y = int(bus_y + 12)
+                # Normal board with CAN selector
+                bus_num = self._board_states.get(board_name, 1)
+                bus_y = bus_y1 if bus_num == 1 else bus_y2
 
-            # Connection line from box to bus
-            conn_pen = QPen(color, 2)
-            p.setPen(conn_pen)
-            if bus_num == 1:
-                p.drawLine(bx, box_y + box_h, bx, int(bus_y))
-            else:
-                p.drawLine(bx, box_y, bx, int(bus_y))
+                if bus_num == 1:
+                    box_y = int(bus_y - box_h - 12)
+                else:
+                    box_y = int(bus_y + 12)
 
-            # Draw node dot on bus
-            p.setBrush(QBrush(color))
-            p.setPen(Qt.NoPen)
-            p.drawEllipse(bx - 4, int(bus_y) - 4, 8, 8)
+                # Connection line from box to bus
+                conn_pen = QPen(color, 2)
+                p.setPen(conn_pen)
+                if bus_num == 1:
+                    p.drawLine(bx, box_y + box_h, bx, int(bus_y))
+                else:
+                    p.drawLine(bx, box_y, bx, int(bus_y))
 
-            # Draw board box
-            p.setPen(QPen(color, 2))
-            p.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 60)))
-            p.drawRoundedRect(box_x, box_y, box_w, box_h, 5, 5)
+                # Node dot on bus
+                p.setBrush(QBrush(color))
+                p.setPen(Qt.NoPen)
+                p.drawEllipse(bx - 4, int(bus_y) - 4, 8, 8)
 
-            # Board label
-            p.setPen(color)
-            ecu_label = board_name.replace("Placa ", "P")
-            p.drawText(box_x, box_y, box_w, box_h, Qt.AlignCenter, ecu_label)
+                # Board box
+                p.setPen(QPen(color, 2))
+                p.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 60)))
+                p.drawRoundedRect(box_x, box_y, box_w, box_h, 5, 5)
+
+                # Label
+                p.setPen(color)
+                ecu_label = board_name.replace("Placa ", "P")
+                p.drawText(box_x, box_y, box_w, box_h, Qt.AlignCenter, ecu_label)
 
         p.end()
 
@@ -140,6 +157,7 @@ class CANTab(QWidget):
         super().__init__(parent)
         self._workers = []
         self._board_states = {}  # {board_name: 1 or 2}
+        self._per_pc_states = {}  # {pc_name: {board_name: 1 or 2}}
 
         layout = QVBoxLayout(self)
 
@@ -171,6 +189,8 @@ class CANTab(QWidget):
         sel_layout.addWidget(QLabel(""), 0, 4)
 
         self._radio_groups = {}
+        self._radio_buttons = {}  # {board_name: (rb1, rb2)}
+        self._na_labels = {}      # {board_name: QLabel} shown when no port
         self._apply_buttons = {}
         self._port_labels = {}
 
@@ -193,9 +213,18 @@ class CANTab(QWidget):
                 lambda btn, bn=board_name: self._on_radio_changed(bn)
             )
             self._radio_groups[board_name] = group
+            self._radio_buttons[board_name] = (rb1, rb2)
 
             sel_layout.addWidget(rb1, row, 1, alignment=Qt.AlignCenter)
             sel_layout.addWidget(rb2, row, 2, alignment=Qt.AlignCenter)
+
+            # "No selector" label — spans CAN1+CAN2 columns, hidden by default
+            na_label = QLabel("No CAN selector")
+            na_label.setStyleSheet("color: #666; font-style: italic;")
+            na_label.setAlignment(Qt.AlignCenter)
+            na_label.setVisible(False)
+            sel_layout.addWidget(na_label, row, 1, 1, 2, alignment=Qt.AlignCenter)
+            self._na_labels[board_name] = na_label
 
             port_label = QLabel("—")
             port_label.setStyleSheet("color: #888;")
@@ -234,9 +263,7 @@ class CANTab(QWidget):
         layout.addWidget(preset_grp)
 
         # Log
-        self.log = LogWidget()
-        self.log.setMaximumHeight(120)
-        layout.addWidget(self.log)
+        self.log = make_log_with_clear(layout, max_height=120)
 
         # Initialize
         self._on_pc_changed(self.pc_combo.currentText())
@@ -245,33 +272,65 @@ class CANTab(QWidget):
         return COMPUTERS.get(self.pc_combo.currentText(), {})
 
     def _on_pc_changed(self, _text):
+        pc_name = self.pc_combo.currentText()
+
+        # Save current state for the previous PC
+        if hasattr(self, '_current_pc') and self._current_pc:
+            self._per_pc_states[self._current_pc] = dict(self._board_states)
+        self._current_pc = pc_name
+
         pc = self._get_pc_cfg()
         boards = pc.get("boards", {})
-        for board_name, port_label in self._port_labels.items():
+        saved = self._per_pc_states.get(pc_name, {})
+
+        for board_name in ["Placa 01", "Placa 02", "Placa 03", "Placa 04"]:
             board_cfg = boards.get(board_name, {})
-            port = board_cfg.get("reset_port")
-            port_label.setText(port if port else "N/A")
-            # Disable controls if no port
+            port = board_cfg.get("can_selector_port")
             has_port = port is not None
-            self._apply_buttons[board_name].setEnabled(has_port)
-            for btn in self._radio_groups[board_name].buttons():
-                btn.setEnabled(has_port)
+            rb1, rb2 = self._radio_buttons[board_name]
+            group = self._radio_groups[board_name]
+
+            # Restore saved bus state (or default CAN1)
+            bus = saved.get(board_name, 1)
+            self._board_states[board_name] = bus
+            for btn in group.buttons():
+                if group.id(btn) == bus:
+                    btn.setChecked(True)
+
+            # Show radio buttons or "No selector" label
+            rb1.setVisible(has_port)
+            rb2.setVisible(has_port)
+            self._na_labels[board_name].setVisible(not has_port)
+
+            # Update port label and apply button
+            self._port_labels[board_name].setText(port if port else "—")
+            self._apply_buttons[board_name].setVisible(has_port)
+
         self._update_topology()
 
     def _on_radio_changed(self, board_name):
         group = self._radio_groups[board_name]
         self._board_states[board_name] = group.checkedId()
+        # Save immediately for current PC
+        pc_name = self.pc_combo.currentText()
+        self._per_pc_states[pc_name] = dict(self._board_states)
         self._update_topology()
 
     def _update_topology(self):
-        self.topology.set_board_states(self._board_states)
+        pc = self._get_pc_cfg()
+        boards_cfg = pc.get("boards", {})
+        available = {}
+        for board_name in ["Placa 01", "Placa 02", "Placa 03", "Placa 04"]:
+            port = boards_cfg.get(board_name, {}).get("can_selector_port")
+            available[board_name] = port is not None
+        self.topology.set_board_states(self._board_states, available)
 
     def _apply_single(self, board_name):
         bus = self._board_states.get(board_name, 1)
         pc = self._get_pc_cfg()
         boards = pc.get("boards", {})
         board_cfg = boards.get(board_name, {})
-        port = board_cfg.get("reset_port")
+        port = board_cfg.get("can_selector_port")
 
         if not port:
             self.log.append_log(f"[CAN] {board_name}: no selector port configured.")

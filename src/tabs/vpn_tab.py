@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from settings import load_credentials, save_credentials, clear_credentials, clear_all_settings
-from widgets import LogWidget, StatusIndicator
+from widgets import LogWidget, StatusIndicator, make_log_with_clear
 
 
 class VPNTab(QWidget):
@@ -91,8 +91,7 @@ class VPNTab(QWidget):
         ))
         layout.addWidget(hint)
 
-        self.log = LogWidget()
-        layout.addWidget(self.log)
+        self.log = make_log_with_clear(layout)
 
         clear_row = QHBoxLayout()
         clear_row.addStretch()

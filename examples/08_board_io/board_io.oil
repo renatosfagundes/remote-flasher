@@ -1,0 +1,43 @@
+// Example 08: Board I/O — reading physical buttons and pots, controlling LEDs
+// Uses the pin definitions from Board.h (ANEB v1.1 evaluation board).
+// Copy Board.h to this folder before building.
+OIL_VERSION = "2.5" : "board_io";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "board_io.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM readAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = ReadIO; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 200;
+      CYCLETIME = 200;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK ReadIO {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};

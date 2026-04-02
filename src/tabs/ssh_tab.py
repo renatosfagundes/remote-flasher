@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 
 from lab_config import COMPUTERS
 from settings import get_remote_user_dir
-from widgets import LogWidget
+from widgets import LogWidget, make_log_with_clear
 from workers import SSHWorker, SFTPUploadWorker
 
 
@@ -84,8 +84,7 @@ class SSHTerminalTab(QWidget):
 
         layout.addWidget(upload_grp)
 
-        self.log = LogWidget()
-        layout.addWidget(self.log)
+        self.log = make_log_with_clear(layout)
 
     def _run_command(self):
         pc = COMPUTERS.get(self.pc_combo.currentText(), {})

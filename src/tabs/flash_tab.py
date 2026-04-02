@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 
 from lab_config import COMPUTERS, AVRDUDE_DEFAULTS, REMOTE_BASE_DIR, REMOTE_SCRIPTS_DIR
 from settings import get_remote_user_dir
-from widgets import LogWidget
+from widgets import LogWidget, make_log_with_clear
 from workers import SSHWorker, SCPWorker
 
 
@@ -72,8 +72,7 @@ class FlashTab(QWidget):
         g.addLayout(btn_row, 5, 0, 1, 2)
         layout.addWidget(ctrl)
 
-        self.log = LogWidget()
-        layout.addWidget(self.log)
+        self.log = make_log_with_clear(layout)
 
         self._on_pc_changed(self.pc_combo.currentText())
 

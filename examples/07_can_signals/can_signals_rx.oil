@@ -1,0 +1,63 @@
+// Example 07: CAN signal decoding with stale detection (RX)
+// Copy Board.h to this folder before building.
+OIL_VERSION = "2.5" : "can_signals_rx";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "can_signals_rx.cpp";
+      APP_SRC = "VirtualIO.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+      LIBRARY     = spi;
+      LIBRARY     = mcp_can;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM recvAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = RecvSignal; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 100;
+      CYCLETIME = 100;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  ALARM printAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = PrintValues; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 500;
+      CYCLETIME = 500;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK RecvSignal {
+    PRIORITY = 20;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+
+  TASK PrintValues {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from settings import APP_DIR
-from widgets import LogWidget
+from widgets import LogWidget, make_log_with_clear
 
 # Paths matching setup_environment.py
 _ESA_DIR = r"C:\ESA"
@@ -436,8 +436,7 @@ class SetupTab(QWidget):
         log_label = QLabel("Setup Log")
         log_label.setStyleSheet("font-weight: bold;")
         log_layout.addWidget(log_label)
-        self.log = LogWidget()
-        log_layout.addWidget(self.log)
+        self.log = make_log_with_clear(log_layout)
         splitter.addWidget(log_widget)
 
         guide_widget = QWidget()

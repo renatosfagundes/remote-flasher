@@ -315,7 +315,33 @@ A aba \textbf{Flash} permite enviar e gravar firmware nas placas.
   \item Use ``Upload + Reset + Flash'' para executar tudo de uma vez
 \end{enumerate}
 
-% === 7. Terminal Serial ==========================================
+% === 7. Configuração CAN ==========================================
+\section{Configuração de Rede CAN}
+
+A aba \textbf{CAN} permite configurar em qual barramento CAN (CAN1 ou CAN2) cada placa está conectada. A placa ANEB possui duas redes CAN independentes, e cada placa pode ser comutada entre elas via comando AT no microcontrolador de controle.
+
+\subsection{Topologia visual}
+
+A parte superior da aba mostra um diagrama em tempo real com dois barramentos (CAN~1 em verde, CAN~2 em laranja) e as placas conectadas a cada um. Placas sem seletor CAN aparecem em cinza com ``?'' entre os dois barramentos.
+
+\subsection{Selecionando a rede}
+
+\begin{enumerate}[nosep]
+  \item Selecione o PC no menu \textbf{Computer}
+  \item Para cada placa, selecione \textbf{CAN~1} ou \textbf{CAN~2}
+  \item Clique em \textbf{Apply} para enviar o comando de comutação
+  \item O log confirma com \texttt{MCU1 OK}
+\end{enumerate}
+
+\subsection{Presets rápidos}
+
+Botões de configuração rápida permitem colocar todas as placas no mesmo barramento ou dividir em grupos com um clique. Útil para configurar rapidamente cenários de comunicação entre ECUs.
+
+\begin{notabox}
+Para que duas ECUs se comuniquem via CAN, ambas devem estar no \textbf{mesmo barramento}. Se a comunicação não funciona, verifique se ambas estão em CAN~1 (ou ambas em CAN~2).
+\end{notabox}
+
+% === 8. Terminal Serial ==========================================
 \section{Terminal Serial}
 
 A aba \textbf{Serial} permite monitorar até 4 conexões seriais simultaneamente e enviar comandos.
@@ -737,9 +763,84 @@ unsigned int raw = ((unsigned int)data[1] << 8) | data[2];
 float velocidade_kmh = raw * resolucao;
 \end{lstlisting}
 
-\textit{Ver exemplo \texttt{05\_can\_basic} na pasta \texttt{examples/}.}
+\textit{Ver exemplos \texttt{05\_can\_basic} e \texttt{07\_can\_signals} na pasta \texttt{examples/}.}
 
-% === 15. Exemplos do Repositório ==================================
+% === 15. Referência Board.h =======================================
+\section{Referência Rápida --- Board.h (Pinos da Placa)}
+
+O arquivo \texttt{Board.h} define os pinos do \emph{Automotive Network Evaluation Board} (ANEB v1.1). Cada ECU possui:
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{llX}
+  \toprule
+  \textbf{Tipo} & \textbf{Pinos (ECU1)} & \textbf{Função} \\
+  \midrule
+  Entrada digital & \texttt{ECU1\_DIN1..DIN4} & Pushbuttons (\texttt{digitalRead}) \\
+  Saída digital   & \texttt{ECU1\_DOUT1, DOUT2} & LEDs (\texttt{digitalWrite}) \\
+  Buzzer          & \texttt{ECU1\_BUZZER} & Buzzer (só ECU1) \\
+  Entrada analógica & \texttt{ECU1\_AIN1..AIN4} & Potenciômetros (\texttt{analogRead}, 0--1023) \\
+  Saída analógica & \texttt{ECU1\_LOOP, LDR\_LED} & PWM (\texttt{analogWrite}, 0--255, só ECU1) \\
+  CAN chip select & \texttt{ECU1\_CAN1\_CS} & MCP2515 SPI CS (\texttt{CAN1\_CS}) \\
+  CAN interrupt   & \texttt{ECU1\_CAN1\_INT} & MCP2515 INT (\texttt{CAN\_INT}) \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+Para usar outra ECU, substitua o prefixo: \texttt{ECU2\_DIN1}, \texttt{ECU3\_AIN2}, etc. A pinagem física é a mesma para todas as ECUs.
+
+\textit{Ver exemplo \texttt{08\_board\_io} na pasta \texttt{examples/}.}
+
+% === 16. Variáveis Compartilhadas ================================
+\section{Referência Rápida --- Variáveis Compartilhadas entre Tasks}
+
+Tasks no Trampoline podem compartilhar dados através de variáveis globais. Use \texttt{volatile} para garantir que o compilador não otimize o acesso:
+
+\begin{lstlisting}[language=C++]
+static volatile int sharedValue = 0;  // compartilhada entre tasks
+
+TASK(Producer) {
+    sharedValue = analogRead(ECU1_AIN1);  // escreve
+    TerminateTask();
+}
+
+TASK(Consumer) {
+    int local = sharedValue;  // lê
+    Serial.println(local);
+    TerminateTask();
+}
+\end{lstlisting}
+
+\begin{notabox}[Cuidado com inconsistência]
+Se uma task de alta prioridade interrompe outra durante a escrita de uma variável multi-byte, o leitor pode ver um valor parcialmente atualizado. Use \texttt{RESOURCE} para proteger seções críticas:
+\end{notabox}
+
+\begin{lstlisting}[language=C++]
+// No .oil: RESOURCE dataRes { RESOURCEPROPERTY = STANDARD; };
+
+TASK(Writer) {
+    GetResource(dataRes);
+    sharedSpeed = newSpeed;    // escrita protegida
+    sharedRPM = newRPM;
+    ReleaseResource(dataRes);
+    TerminateTask();
+}
+
+TASK(Reader) {
+    int s, r;
+    GetResource(dataRes);
+    s = sharedSpeed;           // leitura protegida
+    r = sharedRPM;
+    ReleaseResource(dataRes);
+    Serial.print("V="); Serial.print(s);
+    Serial.print(" R="); Serial.println(r);
+    TerminateTask();
+}
+\end{lstlisting}
+
+\textit{Ver exemplo \texttt{04\_resource\_prodcons} na pasta \texttt{examples/}.}
+
+% === 17. Exemplos do Repositório ==================================
 \section{Exemplos do Repositório}
 
 A pasta \texttt{examples/} do repositório contém projetos prontos para compilar. Copie para \texttt{C:\textbackslash ESA\textbackslash trampoline\textbackslash opt\textbackslash devel\textbackslash} e siga o guia da Seção~12.
@@ -751,15 +852,18 @@ A pasta \texttt{examples/} do repositório contém projetos prontos para compila
   \textbf{\#} & \textbf{Exemplo} & \textbf{Conceitos} \\
   \midrule
   01 & \texttt{blink} & Task + Alarm + \texttt{TerminateTask()} \\
-  02 & \texttt{multitask} & Múltiplas tasks com prioridades diferentes e preempção \\
+  02 & \texttt{multitask} & Múltiplas tasks, prioridades, preempção \\
   03 & \texttt{alarm\_dynamic} & \texttt{SetRelAlarm()}, \texttt{CancelAlarm()}, mudança de período \\
-  04 & \texttt{prodcons} & \texttt{RESOURCE}, \texttt{GetResource()}, \texttt{ReleaseResource()}, produtor-consumidor \\
-  05 & \texttt{can\_basic} & TX + RX com MCP2515, \texttt{sendMsgBuf()}, \texttt{readMsgBuf()} \\
+  04 & \texttt{prodcons} & \texttt{RESOURCE}, \texttt{GetResource()}, \texttt{ReleaseResource()} \\
+  05 & \texttt{can\_basic} & TX + RX básico com MCP2515 \\
+  06 & \texttt{virtualio\_demo} & Botões, potenciômetros e LEDs virtuais (VirtualIO) \\
+  07 & \texttt{can\_signals} & Codificação de sinais, resolução, offset, contador de sequência \\
+  08 & \texttt{board\_io} & Leitura de pinos físicos com Board.h (botões, pots, LEDs) \\
   \bottomrule
 \end{tabularx}
 \end{center}
 
-Cada exemplo contém arquivos \texttt{.oil} e \texttt{.cpp} prontos. Para projetos CAN, copie também \texttt{Board.h} do template.
+Cada exemplo contém arquivos \texttt{.oil} e \texttt{.cpp} prontos. Copie \texttt{Board.h} para projetos que usam pinos físicos ou CAN, e \texttt{VirtualIO.h/cpp} para projetos que usam os controles virtuais.
 
 % === 16. Exemplo Prático: LED com Alarme ==========================
 \section{Exemplo Prático: LED Controlado por Alarme}
