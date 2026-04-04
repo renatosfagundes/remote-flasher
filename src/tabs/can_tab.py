@@ -352,7 +352,8 @@ class CANTab(QWidget):
             self.log.append_log(f"[CAN] {board_name}: no selector port configured.")
             return
 
-        # Send AT Cx, flush, read response with longer delay to capture CB Rxx
+        # Send AT Cx, flush, read response in a loop to capture both
+        # MCU1 OK (immediate) and MCU1 CB R00/R03 (delayed ~500ms)
         cmd = (
             f'powershell -Command "'
             f"$s = New-Object System.IO.Ports.SerialPort {port},19200,None,8,One; "
@@ -361,8 +362,11 @@ class CANTab(QWidget):
             f"if($s.BytesToRead -gt 0){{$s.ReadExisting() | Out-Null}}; "
             f"$s.DiscardInBuffer(); "
             f"$s.WriteLine('AT C{bus}'); "
-            f"Start-Sleep -Milliseconds 800; "
-            f"$r = ''; if($s.BytesToRead -gt 0){{$r = $s.ReadExisting()}}; "
+            f"$r = ''; "
+            f"for($i=0; $i -lt 4; $i++) {{ "
+            f"Start-Sleep -Milliseconds 400; "
+            f"if($s.BytesToRead -gt 0){{$r += $s.ReadExisting()}} "
+            f"}}; "
             f"$s.Close(); "
             f"Write-Host $r.Trim()"
             f'"'
@@ -441,24 +445,30 @@ class CANTab(QWidget):
             self.log.append_log("[CAN] No boards with CAN selectors on this PC.")
 
     def _query_board(self, board_name, port, pc):
-        """Send AT BI + AT SB to a board to identify it and read CAN bus state."""
+        """Send AT BI + AT FV + AT BV to a board to identify it."""
+        # Helper: send cmd, wait, read all available bytes in a loop
+        # Using a PS function to avoid response bleed between commands
         cmd = (
             f'powershell -Command "'
+            f"function Read-AT($s, $cmd) {{ "
+            f"$s.DiscardInBuffer(); "
+            f"$s.WriteLine($cmd); "
+            f"$r = ''; "
+            f"for($i=0; $i -lt 3; $i++) {{ "
+            f"Start-Sleep -Milliseconds 300; "
+            f"if($s.BytesToRead -gt 0){{$r += $s.ReadExisting()}} "
+            f"}}; "
+            f"return $r.Trim() "
+            f"}}; "
             f"$s = New-Object System.IO.Ports.SerialPort {port},19200,None,8,One; "
             f"$s.ReadTimeout = 2000; $s.Open(); "
             f"Start-Sleep -Milliseconds 200; "
             f"if($s.BytesToRead -gt 0){{$s.ReadExisting() | Out-Null}}; "
-            f"$s.DiscardInBuffer(); "
-            f"$s.WriteLine('AT BI'); Start-Sleep -Milliseconds 500; "
-            f"$bi = ''; if($s.BytesToRead -gt 0){{$bi = $s.ReadExisting()}}; "
-            f"$s.DiscardInBuffer(); "
-            f"$s.WriteLine('AT FV'); Start-Sleep -Milliseconds 500; "
-            f"$fv = ''; if($s.BytesToRead -gt 0){{$fv = $s.ReadExisting()}}; "
-            f"$s.DiscardInBuffer(); "
-            f"$s.WriteLine('AT BV'); Start-Sleep -Milliseconds 500; "
-            f"$bv = ''; if($s.BytesToRead -gt 0){{$bv = $s.ReadExisting()}}; "
+            f"$bi = Read-AT $s 'AT BI'; "
+            f"$fv = Read-AT $s 'AT FV'; "
+            f"$bv = Read-AT $s 'AT BV'; "
             f"$s.Close(); "
-            f"Write-Host ('BI:' + $bi.Trim() + '|FV:' + $fv.Trim() + '|BV:' + $bv.Trim())"
+            f"Write-Host ('BI:' + $bi + '|FV:' + $fv + '|BV:' + $bv)"
             f'"'
         )
         self.log.append_log(f"[CAN] Querying {board_name} ({port})...")
