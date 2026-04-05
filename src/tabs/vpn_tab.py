@@ -107,6 +107,25 @@ class VPNTab(QWidget):
         self._log_signal.connect(self.log.append_log)
         self._status_signal.connect(self._apply_status)
 
+        # Check if VPN is already connected on startup
+        threading.Thread(target=self._check_vpn_on_startup, daemon=True).start()
+
+    def _check_vpn_on_startup(self):
+        """Check if the VPN is already connected by listing active rasdial connections."""
+        try:
+            result = subprocess.run(
+                ["rasdial"],
+                capture_output=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            output = result.stdout.decode("cp850", errors="replace")
+            vpn_name = self.vpn_name.text().strip()
+            if vpn_name and vpn_name.lower() in output.lower():
+                self._status_signal.emit("connected", "Connected", True)
+                self._log_signal.emit(f"[VPN] Already connected to '{vpn_name}'")
+        except Exception:
+            pass  # silently ignore — not critical
+
     def _on_remember_toggled(self, checked):
         if checked:
             user = self.vpn_user.text().strip()
@@ -208,7 +227,47 @@ class VPNTab(QWidget):
         self.log.append_log(f"[VPN] Connecting to '{name}' as '{user}'...")
         threading.Thread(target=self._rasdial_connect, args=(name, user, passwd), daemon=True).start()
 
+    def _profile_exists(self, name):
+        """Check if a VPN profile exists using rasdial (list) or rasphone."""
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f'Get-VpnConnection -Name "{name}" -ErrorAction SilentlyContinue'],
+                capture_output=True, timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return name.encode() in result.stdout
+        except Exception:
+            return True  # assume exists if check fails
+
     def _rasdial_connect(self, name, user, passwd):
+        # Check if profile exists, auto-create if not
+        if not self._profile_exists(name):
+            self._log_signal.emit(f"[VPN] Profile '{name}' not found. Creating it...")
+            address = self.vpn_address.text().strip() or self.DEFAULT_VPN_ADDRESS
+            create_cmd = (
+                f'Add-VpnConnection -Name "{name}" -ServerAddress "{address}"'
+                f' -TunnelType Sstp -AuthenticationMethod MSChapv2'
+                f' -EncryptionLevel Required -RememberCredential -Force'
+            )
+            try:
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", create_cmd],
+                    capture_output=True, timeout=20,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                if result.returncode == 0:
+                    self._log_signal.emit(f"[VPN] Profile '{name}' created.")
+                else:
+                    stderr = result.stderr.decode("cp850", errors="replace").strip()
+                    self._log_signal.emit(f"[VPN] Could not create profile: {stderr}")
+                    self._status_signal.emit("disconnected", "No profile", False)
+                    return
+            except Exception as e:
+                self._log_signal.emit(f"[VPN] Profile creation error: {e}")
+                self._status_signal.emit("disconnected", "Error", False)
+                return
+
         try:
             result = subprocess.run(
                 ["rasdial", name, user, passwd],

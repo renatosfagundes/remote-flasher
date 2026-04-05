@@ -7,6 +7,7 @@ from PySide6.QtGui import QPixmap, QImage, QIcon
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QPushButton, QComboBox, QSplitter, QSizePolicy,
+    QMessageBox,
 )
 
 from lab_config import COMPUTERS
@@ -164,6 +165,28 @@ class MainWindow(QMainWindow):
         hide_camera = self.tabs.currentWidget() in (self.vpn_tab, self.setup_tab)
         self.camera_panel.setVisible(not hide_camera and self._camera_visible)
         self.toggle_cam_btn.setVisible(not hide_camera)
+
+    def closeEvent(self, event):
+        if self.vpn_tab._connected:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("VPN Connected")
+            msg.setText("The VPN is still connected. What would you like to do?")
+            disconnect_btn = msg.addButton("Disconnect && Close", QMessageBox.AcceptRole)
+            keep_btn = msg.addButton("Keep VPN && Close", QMessageBox.RejectRole)
+            cancel_btn = msg.addButton("Cancel", QMessageBox.DestructiveRole)
+            msg.setDefaultButton(cancel_btn)
+            msg.exec()
+
+            clicked = msg.clickedButton()
+            if clicked == disconnect_btn:
+                self.vpn_tab._disconnect_vpn()
+                event.accept()
+            elif clicked == keep_btn:
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
 
     def _apply_style(self):
         self.setStyleSheet("""

@@ -19,13 +19,33 @@ class SSHWorker(QThread):
     output = Signal(str)
     finished_signal = Signal(str)
 
-    def __init__(self, host, user, password, command, parent=None):
+    def __init__(self, host, user, password, command, parent=None, timeout=120):
         super().__init__(parent)
         self.host = host
         self.user = user
         self.password = password
         self.command = command
+        self.timeout = timeout
         self._stop = False
+
+    def _decode(self, raw):
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw.decode("cp850", errors="replace")
+
+    def _emit_lines(self, buf, prefix=""):
+        """Emit complete lines from buffer, return leftover (incomplete line)."""
+        text = self._decode(buf)
+        lines = text.split("\n")
+        # Last element is either empty (ended with \n) or an incomplete line
+        leftover = lines.pop()
+        for line in lines:
+            line = line.rstrip("\r")
+            if self._stop:
+                return b""
+            self.output.emit(f"{prefix}{line}" if prefix else line)
+        return leftover.encode("utf-8", errors="replace")
 
     def run(self):
         try:
@@ -36,20 +56,35 @@ class SSHWorker(QThread):
                 self.host, username=self.user, password=self.password, timeout=15
             )
             self.output.emit(f"[SSH] Running: {self.command}")
-            stdin, stdout, stderr = client.exec_command(self.command, timeout=120)
-            raw_out = stdout.read()
-            raw_err = stderr.read()
-            for raw in (raw_out, raw_err):
-                is_err = raw is raw_err
-                try:
-                    text = raw.decode("utf-8")
-                except UnicodeDecodeError:
-                    text = raw.decode("cp850", errors="replace")
-                for line in text.splitlines():
-                    if self._stop:
-                        break
-                    self.output.emit(f"[STDERR] {line}" if is_err else line)
-            exit_status = stdout.channel.recv_exit_status()
+            stdin, stdout, stderr = client.exec_command(self.command, timeout=self.timeout)
+            channel = stdout.channel
+
+            out_buf = b""
+            err_buf = b""
+
+            while not channel.exit_status_ready() or channel.recv_ready() or channel.recv_stderr_ready():
+                if self._stop:
+                    break
+                if channel.recv_ready():
+                    out_buf += channel.recv(4096)
+                    out_buf = self._emit_lines(out_buf)
+                if channel.recv_stderr_ready():
+                    err_buf += channel.recv_stderr(4096)
+                    err_buf = self._emit_lines(err_buf, prefix="")
+                if not channel.recv_ready() and not channel.recv_stderr_ready():
+                    time.sleep(0.1)
+
+            # Flush remaining data
+            while channel.recv_ready():
+                out_buf += channel.recv(4096)
+            while channel.recv_stderr_ready():
+                err_buf += channel.recv_stderr(4096)
+            if out_buf:
+                self._emit_lines(out_buf + b"\n")
+            if err_buf:
+                self._emit_lines(err_buf + b"\n")
+
+            exit_status = channel.recv_exit_status()
             if exit_status > 0x7FFFFFFF:
                 exit_status = exit_status - 0x100000000
             client.close()

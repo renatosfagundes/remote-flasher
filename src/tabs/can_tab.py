@@ -159,6 +159,7 @@ class CANTab(QWidget):
         self._board_states = {}  # {board_name: 1 or 2}
         self._per_pc_states = {}  # {pc_name: {board_name: 1 or 2}}
         self._pending_output = {}  # {board_name: accumulated output}
+        self._apply_queue = []  # sequential queue for apply commands
 
         layout = QVBoxLayout(self)
 
@@ -342,6 +343,7 @@ class CANTab(QWidget):
         self.topology.set_board_states(self._board_states, available)
 
     def _apply_single(self, board_name):
+        """Queue a board for sequential CAN bus apply."""
         bus = self._board_states.get(board_name, 1)
         pc = self._get_pc_cfg()
         boards = pc.get("boards", {})
@@ -352,21 +354,26 @@ class CANTab(QWidget):
             self.log.append_log(f"[CAN] {board_name}: no selector port configured.")
             return
 
-        # Send AT Cx, flush, read response in a loop to capture both
-        # MCU1 OK (immediate) and MCU1 CB R00/R03 (delayed ~500ms)
+        self._apply_queue.append((board_name, bus, port, pc))
+        # Start processing if this is the only item (not already running)
+        if len(self._apply_queue) == 1:
+            self._process_next_apply()
+
+    def _process_next_apply(self):
+        """Process the next board in the sequential apply queue."""
+        if not self._apply_queue:
+            return
+        board_name, bus, port, pc = self._apply_queue[0]
+
         cmd = (
             f'powershell -Command "'
             f"$s = New-Object System.IO.Ports.SerialPort {port},19200,None,8,One; "
             f"$s.ReadTimeout = 2000; $s.Open(); "
             f"Start-Sleep -Milliseconds 200; "
             f"if($s.BytesToRead -gt 0){{$s.ReadExisting() | Out-Null}}; "
-            f"$s.DiscardInBuffer(); "
             f"$s.WriteLine('AT C{bus}'); "
-            f"$r = ''; "
-            f"for($i=0; $i -lt 4; $i++) {{ "
-            f"Start-Sleep -Milliseconds 400; "
-            f"if($s.BytesToRead -gt 0){{$r += $s.ReadExisting()}} "
-            f"}}; "
+            f"Start-Sleep -Milliseconds 500; "
+            f"$r = ''; if($s.BytesToRead -gt 0){{$r = $s.ReadExisting()}}; "
             f"$s.Close(); "
             f"Write-Host $r.Trim()"
             f'"'
@@ -393,32 +400,22 @@ class CANTab(QWidget):
 
     def _on_apply_done(self, board_name, bus, status):
         output = self._pending_output.pop(board_name, "")
+
         if status != "0":
             self.log.append_log(f"[CAN] {board_name} FAILED (exit={status})")
             self._set_status(board_name, "error")
-            return
-
-        # Parse response: CB R00 = CAN1, CB R03 = CAN2
-        confirmed = None
-        if "CB R00" in output:
-            confirmed = 1
-        elif "CB R03" in output:
-            confirmed = 2
-
-        if confirmed == bus:
-            self.log.append_log(
-                f"[CAN] {board_name} confirmed on CAN {bus} (CB R{'00' if bus == 1 else '03'})"
-            )
+        elif "OK" in output:
+            self.log.append_log(f"[CAN] {board_name} set to CAN {bus} — OK")
             self._set_status(board_name, "ok")
-        elif confirmed is not None:
-            self.log.append_log(
-                f"[CAN] {board_name} WARNING: requested CAN {bus} but got CAN {confirmed}"
-            )
-            self._set_status(board_name, "warn")
         else:
-            # MCU1 OK but no CB R response — older firmware
-            self.log.append_log(f"[CAN] {board_name} sent AT C{bus} — OK (no relay confirmation)")
-            self._set_status(board_name, "ok")
+            self.log.append_log(f"[CAN] {board_name} set to CAN {bus} — no response")
+            self._set_status(board_name, "warn")
+
+        # Process next board in queue
+        if self._apply_queue:
+            self._apply_queue.pop(0)
+        if self._apply_queue:
+            self._process_next_apply()
 
     def _set_status(self, board_name, state):
         """Update the status indicator for a board. state: 'ok', 'warn', 'error', 'unknown'."""

@@ -4,6 +4,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QGroupBox, QLabel, QPushButton, QComboBox, QLineEdit, QFileDialog,
+    QMessageBox,
 )
 
 from lab_config import COMPUTERS, AVRDUDE_DEFAULTS, REMOTE_BASE_DIR, REMOTE_SCRIPTS_DIR
@@ -135,6 +136,19 @@ class FlashTab(QWidget):
         self._workers.append(worker)
         worker.start()
 
+    def _check_port_in_use(self, port):
+        """Check if a COM port is being used by an active serial panel."""
+        main_window = self.window()
+        serial_tab = getattr(main_window, 'serial_tab', None)
+        if serial_tab is None:
+            return False
+        for panel in getattr(serial_tab, '_panels', []):
+            if hasattr(panel, '_worker') and panel._worker and panel._worker.isRunning():
+                panel_port = getattr(panel, 'port_combo', None)
+                if panel_port and panel_port.currentText() == port:
+                    return True
+        return False
+
     def _flash_firmware(self):
         pc = self._get_pc_cfg()
         board = self._get_board_cfg()
@@ -144,6 +158,18 @@ class FlashTab(QWidget):
         if not hex_name:
             self.log.append_log("[Flash] No hex file specified.")
             return
+
+        # Check if serial panel is using this port
+        if self._check_port_in_use(ecu_port):
+            reply = QMessageBox.warning(
+                self, "Port In Use",
+                f"COM port {ecu_port} is currently open in a serial panel.\n"
+                f"Close the serial connection before flashing.",
+                QMessageBox.Ok,
+            )
+            self.log.append_log(f"[Flash] Aborted — {ecu_port} is in use by serial panel.")
+            return
+
         if pc.get("flash_method") == "flash.py":
             reset_port = board.get("reset_port", "")
             cmd = (f'cd {remote_dir} && copy {REMOTE_SCRIPTS_DIR}\\avrdude.conf . >nul 2>&1'
@@ -156,13 +182,20 @@ class FlashTab(QWidget):
                    f' -b {AVRDUDE_DEFAULTS["baudrate"]} -P {ecu_port}'
                    f' -U flash:w:{hex_name}:i')
         self.log.append_log(f"[Flash] Executing: {cmd}")
-        worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd)
+        worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd, timeout=30)
         worker.output.connect(self.log.append_log)
-        worker.finished_signal.connect(
-            lambda s: self.log.append_log(f"[Flash] {'SUCCESS' if s == '0' else 'FAILED'} (exit={s})")
-        )
+        worker.finished_signal.connect(self._on_flash_done)
         self._workers.append(worker)
         worker.start()
+
+    def _on_flash_done(self, status):
+        if status == "0":
+            self.log.append_log("[Flash] SUCCESS")
+        elif status == "-1":
+            self.log.append_log("[Flash] FAILED — connection error or timeout (30s).")
+            self.log.append_log("[Flash] Check that the COM port is not in use and the board is connected.")
+        else:
+            self.log.append_log(f"[Flash] FAILED (exit={status})")
 
     def _do_all(self):
         pc = self._get_pc_cfg()
