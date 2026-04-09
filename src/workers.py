@@ -244,24 +244,34 @@ class CameraWorker(QThread):
         self._running = True
 
     def run(self):
-        try:
-            resp = requests.get(self.url, stream=True, timeout=10)
-            buf = b""
-            for chunk in resp.iter_content(chunk_size=4096):
+        import urllib3
+        urllib3.disable_warnings()
+        while self._running:
+            try:
+                resp = requests.get(self.url, stream=True, timeout=10)
+                buf = b""
+                for chunk in resp.iter_content(chunk_size=4096):
+                    if not self._running:
+                        break
+                    buf += chunk
+                    start = buf.find(b"\xff\xd8")
+                    end = buf.find(b"\xff\xd9")
+                    if start != -1 and end != -1 and end > start:
+                        jpg = buf[start : end + 2]
+                        buf = buf[end + 2 :]
+                        img = QImage()
+                        img.loadFromData(jpg)
+                        if not img.isNull():
+                            self.frame_ready.emit(img)
+            except Exception as e:
                 if not self._running:
                     break
-                buf += chunk
-                start = buf.find(b"\xff\xd8")
-                end = buf.find(b"\xff\xd9")
-                if start != -1 and end != -1 and end > start:
-                    jpg = buf[start : end + 2]
-                    buf = buf[end + 2 :]
-                    img = QImage()
-                    img.loadFromData(jpg)
-                    if not img.isNull():
-                        self.frame_ready.emit(img)
-        except Exception as e:
-            self.error.emit(str(e))
+                self.error.emit(str(e))
+                # Wait before retrying to avoid spamming
+                for _ in range(50):  # 5 seconds in 100ms increments
+                    if not self._running:
+                        return
+                    time.sleep(0.1)
 
     def stop(self):
         self._running = False

@@ -142,8 +142,8 @@ class FlashTab(QWidget):
         serial_tab = getattr(main_window, 'serial_tab', None)
         if serial_tab is None:
             return False
-        for panel in getattr(serial_tab, '_panels', []):
-            if hasattr(panel, '_worker') and panel._worker and panel._worker.isRunning():
+        for panel in getattr(serial_tab, 'panels', []):
+            if panel.serial_worker and panel.serial_worker.isRunning():
                 panel_port = getattr(panel, 'port_combo', None)
                 if panel_port and panel_port.currentText() == port:
                     return True

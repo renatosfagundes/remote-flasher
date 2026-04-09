@@ -6,6 +6,11 @@ Entry point — run this file to launch the application.
 """
 import sys
 import os
+import logging
+
+# Suppress noisy socket/urllib3 warnings on console
+logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+logging.getLogger("requests").setLevel(logging.CRITICAL)
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (

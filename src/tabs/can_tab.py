@@ -158,6 +158,8 @@ class CANTab(QWidget):
         self._workers = []
         self._board_states = {}  # {board_name: 1 or 2}
         self._per_pc_states = {}  # {pc_name: {board_name: 1 or 2}}
+        self._board_statuses = {}  # {board_name: "ok"|"warn"|"error"|"unknown"}
+        self._per_pc_statuses = {}  # {pc_name: {board_name: status}}
         self._pending_output = {}  # {board_name: accumulated output}
         self._apply_queue = []  # sequential queue for apply commands
 
@@ -294,11 +296,13 @@ class CANTab(QWidget):
         # Save current state for the previous PC
         if hasattr(self, '_current_pc') and self._current_pc:
             self._per_pc_states[self._current_pc] = dict(self._board_states)
+            self._per_pc_statuses[self._current_pc] = dict(self._board_statuses)
         self._current_pc = pc_name
 
         pc = self._get_pc_cfg()
         boards = pc.get("boards", {})
         saved = self._per_pc_states.get(pc_name, {})
+        saved_statuses = self._per_pc_statuses.get(pc_name, {})
 
         for board_name in ["Placa 01", "Placa 02", "Placa 03", "Placa 04"]:
             board_cfg = boards.get(board_name, {})
@@ -319,9 +323,11 @@ class CANTab(QWidget):
             rb2.setVisible(has_port)
             self._na_labels[board_name].setVisible(not has_port)
 
-            # Update port label and apply button
+            # Update port label, apply button, and restore status indicator
             self._port_labels[board_name].setText(port if port else "—")
             self._apply_buttons[board_name].setVisible(has_port)
+            status = saved_statuses.get(board_name, "unknown")
+            self._set_status(board_name, status)
 
         self._update_topology()
 
@@ -419,6 +425,7 @@ class CANTab(QWidget):
 
     def _set_status(self, board_name, state):
         """Update the status indicator for a board. state: 'ok', 'warn', 'error', 'unknown'."""
+        self._board_statuses[board_name] = state
         colors = {"ok": "#27ae60", "warn": "#f39c12", "error": "#c0392b", "unknown": "#666"}
         icons = {"ok": "\u2713", "warn": "!", "error": "\u2717", "unknown": "?"}
         label = self._status_labels.get(board_name)

@@ -108,9 +108,11 @@ class VPNTab(QWidget):
         self._status_signal.connect(self._apply_status)
 
         # Check if VPN is already connected on startup
-        threading.Thread(target=self._check_vpn_on_startup, daemon=True).start()
+        # Capture widget value in main thread — Qt widgets must not be read from bg threads.
+        vpn_name = self.vpn_name.text().strip()
+        threading.Thread(target=self._check_vpn_on_startup, args=(vpn_name,), daemon=True).start()
 
-    def _check_vpn_on_startup(self):
+    def _check_vpn_on_startup(self, vpn_name):
         """Check if the VPN is already connected by listing active rasdial connections."""
         try:
             result = subprocess.run(
@@ -119,7 +121,6 @@ class VPNTab(QWidget):
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             output = result.stdout.decode("cp850", errors="replace")
-            vpn_name = self.vpn_name.text().strip()
             if vpn_name and vpn_name.lower() in output.lower():
                 self._status_signal.emit("connected", "Connected", True)
                 self._log_signal.emit(f"[VPN] Already connected to '{vpn_name}'")
@@ -224,8 +225,9 @@ class VPNTab(QWidget):
             save_credentials(user, passwd)
         self.status_indicator.set_status("connecting")
         self.status_label.setText("Connecting...")
+        address = self.vpn_address.text().strip() or self.DEFAULT_VPN_ADDRESS
         self.log.append_log(f"[VPN] Connecting to '{name}' as '{user}'...")
-        threading.Thread(target=self._rasdial_connect, args=(name, user, passwd), daemon=True).start()
+        threading.Thread(target=self._rasdial_connect, args=(name, user, passwd, address), daemon=True).start()
 
     def _profile_exists(self, name):
         """Check if a VPN profile exists using rasdial (list) or rasphone."""
@@ -240,11 +242,10 @@ class VPNTab(QWidget):
         except Exception:
             return True  # assume exists if check fails
 
-    def _rasdial_connect(self, name, user, passwd):
+    def _rasdial_connect(self, name, user, passwd, address):
         # Check if profile exists, auto-create if not
         if not self._profile_exists(name):
             self._log_signal.emit(f"[VPN] Profile '{name}' not found. Creating it...")
-            address = self.vpn_address.text().strip() or self.DEFAULT_VPN_ADDRESS
             create_cmd = (
                 f'Add-VpnConnection -Name "{name}" -ServerAddress "{address}"'
                 f' -TunnelType Sstp -AuthenticationMethod MSChapv2'
