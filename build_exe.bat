@@ -5,6 +5,10 @@ REM Run from the remote_flasher (project root) directory
 REM Use python from PATH by default. Override by setting PYTHON env var before running.
 if not defined PYTHON set PYTHON=python
 
+REM Read version from VERSION file
+for /f %%v in (VERSION) do set VERSION=%%v
+echo Version: %VERSION%
+
 echo Installing PyInstaller if needed...
 %PYTHON% -m pip install pyinstaller --quiet
 
@@ -12,9 +16,10 @@ echo Building executable...
 %PYTHON% -m PyInstaller ^
     --onefile ^
     --windowed ^
-    --name "RemoteFlasher" ^
+    --name "RemoteFlasher_v%VERSION%" ^
     --icon "assets\icon.ico" ^
     --add-data "assets\icon.ico;assets" ^
+    --add-data "src\_version.py;." ^
     --add-data "src\lab_config.py;." ^
     --add-data "src\serialterm.py;." ^
     --add-data "src\settings.py;." ^
@@ -29,6 +34,7 @@ echo Building executable...
     --add-data "src\tabs\setup_tab.py;tabs" ^
     --add-data "secrets.py;." ^
     --paths "src" ^
+    --hidden-import _version ^
     --hidden-import paramiko ^
     --hidden-import requests ^
     --hidden-import settings ^
@@ -44,10 +50,10 @@ echo Building executable...
     src\main.py
 
 echo.
-if exist dist\RemoteFlasher.exe (
-    echo SUCCESS: dist\RemoteFlasher.exe
+if exist "dist\RemoteFlasher_v%VERSION%.exe" (
+    echo SUCCESS: dist\RemoteFlasher_v%VERSION%.exe
     echo Size:
-    dir dist\RemoteFlasher.exe | findstr RemoteFlasher
+    dir "dist\RemoteFlasher_v%VERSION%.exe" | findstr RemoteFlasher
 ) else (
     echo FAILED — check output above for errors.
 )

@@ -4,6 +4,8 @@ Connect via VPN + SSH to flash Arduino boards in the lab and watch cameras.
 
 Entry point — run this file to launch the application.
 """
+from _version import __version__
+
 import sys
 import os
 import logging

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
+from _version import __version__
 from lab_config import COMPUTERS
 from settings import APP_DIR
 from workers import CameraWorker
@@ -90,7 +91,7 @@ class CameraPanel(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Remote Firmware Flasher — UFPE Lab")
+        self.setWindowTitle(f"Remote Firmware Flasher v{__version__} — UFPE Lab")
         self.setMinimumSize(1100, 700)
 
         icon_path = os.path.join(getattr(sys, '_MEIPASS', APP_DIR), "assets", "icon.ico")
@@ -138,7 +139,7 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._on_tab_changed(self.tabs.currentIndex())
 
-        self.statusBar().showMessage("Ready — connect VPN first, then use Flash/Camera/Serial tabs")
+        self.statusBar().showMessage(f"v{__version__} — Ready — connect VPN first, then use Flash/Camera/Serial tabs")
 
         self._apply_style()
 
