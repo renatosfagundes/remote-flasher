@@ -157,6 +157,8 @@ class FlashTab(QWidget):
             self.hex_path.setText(path)
 
     def _upload_hex(self):
+        if not self._preflight("Upload"):
+            return
         pc = self._get_pc_cfg()
         local = self.hex_path.text().strip()
         if not local or not os.path.isfile(local):
@@ -172,10 +174,12 @@ class FlashTab(QWidget):
         worker.start()
 
     def _reset_board(self):
-        pc = self._get_pc_cfg()
         board = self._get_board_cfg()
-        reset_script = board.get("reset_script")
         reset_port = board.get("reset_port")
+        if not self._preflight("Reset", ports_to_check=[reset_port] if reset_port else []):
+            return
+        pc = self._get_pc_cfg()
+        reset_script = board.get("reset_script")
         if reset_script:
             if not reset_port:
                 self.log.append_log("[Reset] reset_port not configured for this board.")
@@ -198,6 +202,8 @@ class FlashTab(QWidget):
 
     def _check_port_in_use(self, port):
         """Check if a COM port is being used by an active serial panel."""
+        if not port:
+            return False
         main_window = self.window()
         serial_tab = getattr(main_window, 'serial_tab', None)
         if serial_tab is None:
@@ -209,25 +215,55 @@ class FlashTab(QWidget):
                     return True
         return False
 
-    def _flash_firmware(self):
+    def _preflight(self, label, ports_to_check=()):
+        """Pre-flight checks: VPN connection + COM port availability.
+
+        Returns True if OK to proceed; False if the user cancelled or a port
+        is held by a running serial panel.
+        """
+        # 1) VPN check — non-blocking (user can proceed if they know better)
+        main_window = self.window()
+        vpn_tab = getattr(main_window, 'vpn_tab', None)
+        if vpn_tab is not None and not getattr(vpn_tab, '_connected', False):
+            reply = QMessageBox.question(
+                self, "VPN Not Connected",
+                "The VPN appears to be disconnected.\n\n"
+                "If the remote PC isn't reachable without the VPN, "
+                f"{label.lower()} will fail.\n\nProceed anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                self.log.append_log(f"[{label}] Aborted — VPN not connected.")
+                return False
+
+        # 2) Port-in-use check — blocking (can't share a COM port)
+        for port in ports_to_check:
+            if self._check_port_in_use(port):
+                QMessageBox.warning(
+                    self, "Port In Use",
+                    f"COM port {port} is currently open in a serial panel.\n\n"
+                    f"Close the serial connection before {label.lower()}.",
+                    QMessageBox.Ok,
+                )
+                self.log.append_log(
+                    f"[{label}] Aborted — {port} is in use by a serial panel."
+                )
+                return False
+        return True
+
+    def _flash_firmware(self, _internal=False):
+        ecu_port = self.ecu_combo.currentText()
+        # _internal=True when chained from _after_upload / _after_reset — the
+        # preflight dialogs already ran at the top of the sequence.
+        if not _internal and not self._preflight("Flash", ports_to_check=[ecu_port]):
+            return
         pc = self._get_pc_cfg()
         board = self._get_board_cfg()
-        ecu_port = self.ecu_combo.currentText()
         hex_name = os.path.basename(self.hex_path.text().strip())
         remote_dir = self.remote_folder.text().strip()
         if not hex_name:
             self.log.append_log("[Flash] No hex file specified.")
-            return
-
-        # Check if serial panel is using this port
-        if self._check_port_in_use(ecu_port):
-            reply = QMessageBox.warning(
-                self, "Port In Use",
-                f"COM port {ecu_port} is currently open in a serial panel.\n"
-                f"Close the serial connection before flashing.",
-                QMessageBox.Ok,
-            )
-            self.log.append_log(f"[Flash] Aborted — {ecu_port} is in use by serial panel.")
             return
 
         if pc.get("flash_method") == "flash.py":
@@ -261,6 +297,13 @@ class FlashTab(QWidget):
             self.log.append_log(f"[Flash] FAILED (exit={status})")
 
     def _do_all(self):
+        board = self._get_board_cfg()
+        ports_to_check = [self.ecu_combo.currentText()]
+        reset_port = board.get("reset_port")
+        if reset_port:
+            ports_to_check.append(reset_port)
+        if not self._preflight("All", ports_to_check=ports_to_check):
+            return
         pc = self._get_pc_cfg()
         local = self.hex_path.text().strip()
         if not local or not os.path.isfile(local):
@@ -281,7 +324,7 @@ class FlashTab(QWidget):
         pc = self._get_pc_cfg()
         board = self._get_board_cfg()
         if pc.get("flash_method") == "flash.py":
-            self._flash_firmware()
+            self._flash_firmware(_internal=True)
             return
         reset_script = board.get("reset_script")
         reset_port = board.get("reset_port")
@@ -300,4 +343,4 @@ class FlashTab(QWidget):
 
     def _after_reset(self, _status):
         self.log.append_log("[All] Flashing firmware...")
-        self._flash_firmware()
+        self._flash_firmware(_internal=True)

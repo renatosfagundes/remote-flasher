@@ -34,7 +34,9 @@ class CameraPanel(QWidget):
         self.url_combo.setEditable(True)
         self.url_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         for _name, cfg in COMPUTERS.items():
-            self.url_combo.addItem(cfg["camera_url"])
+            url = cfg.get("camera_url", "").strip()
+            if url:
+                self.url_combo.addItem(url)
         ctrl_row.addWidget(self.url_combo)
 
         self.start_btn = QPushButton("Start")
