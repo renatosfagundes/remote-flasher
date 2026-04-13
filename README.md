@@ -9,13 +9,14 @@ A PySide6 desktop application for remotely flashing Arduino boards over VPN + SS
 ## Features
 
 - **VPN Connection** — Connect to the lab VPN (SSTP) directly from the app, with auto-detection of existing connections, auto-profile creation, and optional credential saving. Disconnect prompt on exit.
-- **Firmware Flashing** — Upload `.hex` files via SCP and flash using `avrdude` over SSH. Streaming output, 30s timeout, and COM port conflict detection with serial panels.
-- **Board Reset** — Trigger board reset via AT commands on the MCU control port
+- **Firmware Flashing** — Upload `.hex` files via SCP and flash using `avrdude` over SSH. Real-time streaming output (PTY-based), correct exit-code reporting, and pre-flight checks (VPN status + COM port conflict with serial panels).
+- **Board Reset** — Parameterized `reset.ps1` PowerShell script (one file, any port) triggers board reset via AT commands on the MCU control port
+- **Port Distribution Sync** — One-click sync of per-PC board/port mappings from `c:\dev\ports.json` on the primary lab PC. Cached locally so the next launch starts with the latest distribution without re-syncing.
 - **CAN Network Configuration** — Visual bus topology, per-board CAN1/CAN2 selection via AT commands, quick presets, board detection (AT BI/FV/BV), sequential reliable switching
 - **Multi-Serial Terminal** — Up to 4 simultaneous serial connections with spatial layout (side-by-side, 2+1, 2x2 grid), bidirectional send, autoscroll toggle, and port exclusion
 - **Virtual I/O** — 4 buttons, 4 LEDs, and 2 potentiometers per serial panel. Buttons and pots send commands to the Arduino; LEDs are controlled by the firmware with brightness scaling. Includes Arduino library (`VirtualIO.h`)
 - **SSH Terminal + SFTP Upload** — Run commands and upload files/folders to the remote PC with progress tracking
-- **Live Camera** — View the lab camera feed (collapsible side panel, auto-resizes with serial panel count)
+- **Live Camera** — View the lab camera feed (collapsible side panel, auto-resizes with serial panel count). Only PCs with a configured `camera_url` appear in the dropdown.
 - **Environment Setup** — One-click installation of Arduino CLI, AVR Toolchain, Trampoline RTOS, goil, MCP_CAN. Python detection with clear messaging.
 - **IDE Integration Guides** — Built-in guides for Notepad++ and VSCode with ready-to-use configurations
 - **Multi-PC Support** — Pre-configured for multiple lab PCs, each with 4 boards and CAN selectors

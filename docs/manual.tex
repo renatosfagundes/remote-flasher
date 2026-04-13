@@ -1,5 +1,5 @@
 % ============================================================
-%  Manual do Usuário — Remote Firmware Flasher v2.1.0
+%  Manual do Usuário — Remote Firmware Flasher v2.2.0
 %  Compilar com: tectonic manual.tex
 % ============================================================
 \documentclass[12pt,a4paper]{article}
@@ -110,7 +110,7 @@
 % --- Cabeçalho e rodapé ------------------------------------------
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small\color{cinzatexto}Remote Firmware Flasher v2.1.0}
+\fancyhead[L]{\small\color{cinzatexto}Remote Firmware Flasher v2.2.0}
 \fancyhead[R]{\small\color{cinzatexto}Manual do Usuário}
 \fancyfoot[C]{\small\color{cinzatexto}\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -352,6 +352,37 @@ A aba \textbf{Flash} permite enviar e gravar firmware nas placas.
   \includegraphics[width=\textwidth]{flash_done.png}
   \caption{Flash concluído --- saída do avrdude em tempo real com progresso de escrita e verificação.}
 \end{figure}
+
+\subsection{Sincronizando o mapeamento de portas (v2.2.0)}
+
+O mapeamento de portas COM das placas pode mudar quando cabos são
+reconectados. Para evitar atualizar o código-fonte toda vez que isso
+ocorrer, existe um botão \textbf{Sync Ports from PC 217} ao lado do
+seletor de PC. Ele baixa via SFTP o arquivo \texttt{c:\textbackslash dev\textbackslash ports.json}
+do PC 217 e aplica o mapeamento aos quatro PCs do laboratório em memória.
+O conteúdo é armazenado em cache local em \texttt{\%APPDATA\%\textbackslash RemoteFlasher\textbackslash ports\_cache.json},
+de forma que a próxima execução já inicia com a distribuição atualizada.
+
+O arquivo \texttt{ports.json} aceita apenas os campos \texttt{ecu\_ports},
+\texttt{reset\_port} e \texttt{can\_selector\_port} por placa. Outros valores
+(método de flash, script de reset, credenciais) permanecem definidos em
+\texttt{lab\_config.py}.
+
+\subsection{Verificações pré-flash (v2.2.0)}
+
+Ao clicar em qualquer um dos botões \textbf{Upload}, \textbf{Reset},
+\textbf{Flash} ou \textbf{Upload + Reset + Flash}, a aplicação faz duas
+verificações automaticamente:
+
+\begin{itemize}[nosep]
+  \item \textbf{VPN desconectada:} exibe um diálogo ``Proceed anyway?''
+    com opção de prosseguir caso o PC remoto esteja acessível por outro
+    caminho (rede local, túnel alternativo, etc.).
+  \item \textbf{Porta em uso no terminal serial:} se alguma das portas
+    envolvidas (ECU ou reset) estiver aberta em um painel da aba
+    \textbf{Serial}, um diálogo bloqueante informa qual porta e qual ação
+    foi cancelada. Feche o painel serial e tente novamente.
+\end{itemize}
 
 % === 7. Configuração CAN ==========================================
 \section{Configuração de Rede CAN}

@@ -9,6 +9,12 @@ secrets.py
 dist/
 build/
 
+# Version-specific PyInstaller spec files (build artifacts — RemoteFlasher.spec is the source of truth)
+RemoteFlasher_v*.spec
+
+# Backup files
+*.bak
+
 # Python cache
 __pycache__/
 *.pyc
