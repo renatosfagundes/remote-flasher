@@ -232,8 +232,9 @@ class FlashTab(QWidget):
 
         if pc.get("flash_method") == "flash.py":
             reset_port = board.get("reset_port", "")
+            # -u = unbuffered so flash.py's prints stream in real time
             cmd = (f'cd {remote_dir} && copy {REMOTE_SCRIPTS_DIR}\\avrdude.conf . >nul 2>&1'
-                   f' & python {REMOTE_BASE_DIR}\\flash.py --reset_port {reset_port}'
+                   f' & python -u {REMOTE_BASE_DIR}\\flash.py --reset_port {reset_port}'
                    f' --flash_port {ecu_port} --hex {hex_name} --delay 0.4')
         else:
             cmd = (f'cd {remote_dir} && copy {REMOTE_SCRIPTS_DIR}\\avrdude.conf . >nul 2>&1'
@@ -242,7 +243,9 @@ class FlashTab(QWidget):
                    f' -b {AVRDUDE_DEFAULTS["baudrate"]} -P {ecu_port}'
                    f' -U flash:w:{hex_name}:i')
         self.log.append_log(f"[Flash] Executing: {cmd}")
-        worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd, timeout=30)
+        # use_pty=True makes avrdude/python detect a TTY and flush each line
+        # immediately instead of dumping everything at the end.
+        worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd, timeout=30, use_pty=True)
         worker.output.connect(self.log.append_log)
         worker.finished_signal.connect(self._on_flash_done)
         self._workers.append(worker)

@@ -16,18 +16,45 @@ from PySide6.QtGui import QImage
 from lab_config import REMOTE_BASE_DIR
 
 
+_ANSI_RE = re.compile(
+    r"\x1b\[[0-9;?]*[a-zA-Z@`~]"       # CSI sequences (cursor, color, erase)
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC sequences (title, icon)
+    r"|\x1b[()#][0-9A-Za-z]"            # charset designators
+    r"|\x1b[=>78]"                       # keypad mode, save/restore cursor
+    r"|\x07"                              # stray BEL
+)
+
+_EXIT_SENTINEL = "__RF_EXIT__="
+
+
 class SSHWorker(QThread):
     """Run a command over SSH in a background thread."""
     output = Signal(str)
     finished_signal = Signal(str)
 
-    def __init__(self, host, user, password, command, parent=None, timeout=120):
+    def __init__(self, host, user, password, command, parent=None, timeout=120, use_pty=False):
         super().__init__(parent)
         self.host = host
         self.user = user
         self.password = password
-        self.command = command
         self.timeout = timeout
+        # Request a PTY so child processes (avrdude, python) detect a TTY and
+        # use line-buffered stdout instead of fully-buffered. Without this,
+        # long-running commands appear to hang and dump all output at the end.
+        self.use_pty = use_pty
+        if use_pty:
+            # Windows OpenSSH doesn't reliably propagate child exit codes
+            # through a PTY, so wrap the command in `cmd /v:on /c` (delayed
+            # expansion) and echo a sentinel with !ERRORLEVEL! so we can
+            # parse the real exit status from stdout. `call echo %%X%%`
+            # alone doesn't work here — cmd expands %ERRORLEVEL% to %0% in
+            # that context; delayed expansion with !ERRORLEVEL! does.
+            self.command = (
+                f'cmd /v:on /c "{command} & echo {_EXIT_SENTINEL}!ERRORLEVEL!"'
+            )
+        else:
+            self.command = command
+        self._captured_exit = None
         self._stop = False
 
     def _decode(self, raw):
@@ -37,15 +64,31 @@ class SSHWorker(QThread):
             return raw.decode("cp850", errors="replace")
 
     def _emit_lines(self, buf, prefix=""):
-        """Emit complete lines from buffer, return leftover (incomplete line)."""
-        text = self._decode(buf)
-        lines = text.split("\n")
-        # Last element is either empty (ended with \n) or an incomplete line
-        leftover = lines.pop()
-        for line in lines:
-            line = line.rstrip("\r")
+        """Emit complete lines from buffer, return leftover (incomplete line).
+
+        Splits on both \\n and \\r so progress bars that overwrite via carriage
+        return (avrdude's Writing/Reading bars) produce incremental log lines
+        instead of one blob at the end. Also strips ANSI escape sequences
+        that leak through when a PTY is allocated on Windows, and intercepts
+        the exit-code sentinel we append when use_pty=True.
+        """
+        text = self._decode(buf).replace("\r\n", "\n")
+        text = _ANSI_RE.sub("", text)
+        parts = re.split(r"[\n\r]", text)
+        leftover = parts.pop()  # trailing incomplete fragment
+        for line in parts:
             if self._stop:
                 return b""
+            # Intercept sentinel: capture real exit code and suppress the line.
+            if _EXIT_SENTINEL in line:
+                tail = line.split(_EXIT_SENTINEL, 1)[1].strip()
+                try:
+                    self._captured_exit = int(tail)
+                except ValueError:
+                    pass
+                continue
+            if line == "":
+                continue
             self.output.emit(f"{prefix}{line}" if prefix else line)
         return leftover.encode("utf-8", errors="replace")
 
@@ -58,7 +101,11 @@ class SSHWorker(QThread):
                 self.host, username=self.user, password=self.password, timeout=15
             )
             self.output.emit(f"[SSH] Running: {self.command}")
-            stdin, stdout, stderr = client.exec_command(self.command, timeout=self.timeout)
+            # When use_pty=True, stderr is merged into stdout — child processes
+            # detect a TTY and stream output line-by-line instead of buffering.
+            stdin, stdout, stderr = client.exec_command(
+                self.command, timeout=self.timeout, get_pty=self.use_pty
+            )
             channel = stdout.channel
 
             out_buf = b""
@@ -89,6 +136,10 @@ class SSHWorker(QThread):
             exit_status = channel.recv_exit_status()
             if exit_status > 0x7FFFFFFF:
                 exit_status = exit_status - 0x100000000
+            # Windows OpenSSH + PTY: channel exit code is unreliable, trust the
+            # sentinel we echoed instead.
+            if self.use_pty and self._captured_exit is not None:
+                exit_status = self._captured_exit
             client.close()
             self.finished_signal.emit(str(exit_status))
         except Exception as e:
