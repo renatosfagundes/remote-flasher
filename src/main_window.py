@@ -126,6 +126,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.main_splitter)
 
         self.serial_tab.panel_count_changed.connect(self._on_serial_panel_count)
+        self.flash_tab.ports_synced.connect(self._on_ports_synced)
 
         self.toggle_cam_btn = QPushButton("Hide Camera")
         self.toggle_cam_btn.setCheckable(True)
@@ -150,6 +151,20 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, index):
         self._update_camera_visibility()
+
+    def _on_ports_synced(self):
+        """Refresh board/port combos in every tab after ports.json sync.
+        SSHTab reads COMPUTERS live when acting, so no refresh is needed there.
+        """
+        # CAN tab has a single pc_combo.
+        handler = getattr(self.can_tab, "_on_pc_changed", None)
+        if callable(handler):
+            handler(self.can_tab.pc_combo.currentText())
+        # Serial tab owns multiple panels, each with its own pc_combo.
+        for panel in getattr(self.serial_tab, "panels", []):
+            panel_handler = getattr(panel, "_on_pc_changed", None)
+            if callable(panel_handler):
+                panel_handler(panel.pc_combo.currentText())
 
     def _on_serial_panel_count(self, count):
         if self.tabs.currentWidget() is not self.serial_tab:

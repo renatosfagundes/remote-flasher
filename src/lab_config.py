@@ -49,25 +49,25 @@ COMPUTERS = {
         "Placa 01": {
             "ecu_ports": ["COM25", "COM26", "COM27", "COM28"],
             "reset_port": "COM57",
-            "reset_script": "reset_placa_01.ps1",
+            "reset_script": "reset.ps1",
             "can_selector_port": "COM57",
         },
         "Placa 02": {
-            "ecu_ports": ["COM13", "COM14", "COM15", "COM16"],
-            "reset_port": "COM58",
-            "reset_script": "reset_placa_02.ps1",
-            "can_selector_port": "COM58",
+            "ecu_ports": ["COM29", "COM30", "COM31", "COM32"],
+            "reset_port": "COM63",
+            "reset_script": "reset.ps1",
+            "can_selector_port": "COM63",
         },
         "Placa 03": {
             "ecu_ports": ["COM33", "COM34", "COM35", "COM36"],
             "reset_port": "COM59",
-            "reset_script": "reset_placa_03.ps1",
+            "reset_script": "reset.ps1",
             "can_selector_port": "COM59",
         },
         "Placa 04": {
-            "ecu_ports": ["COM53", "COM54", "COM55", "COM56"],
+            "ecu_ports": ["COM17", "COM18", "COM19", "COM20"],
             "reset_port": "COM60",
-            "reset_script": "reset_placa_04.ps1",
+            "reset_script": "reset.ps1",
             "can_selector_port": "COM60",
         },
     }),
@@ -99,7 +99,7 @@ COMPUTERS = {
     }),
     f"PC 220 ({SSH_HOSTS['PC 220']['host']})": _pc("PC 220", "flash.py", {
         "Placa 01": {
-            "ecu_ports": ["COM35", "COM36", "COM37", "COM38"],
+            "ecu_ports": ["COM3", "COM4", "COM5", "COM6"],
             "reset_port": "COM31",
             "reset_script": None,
             "can_selector_port": "COM31",
@@ -118,7 +118,7 @@ COMPUTERS = {
         },
         "Placa 04": {
             "ecu_ports": ["COM7", "COM8", "COM9", "COM10"],
-            "reset_port": "COM34",
+            "reset_port": "COM39",
             "reset_script": None,
             "can_selector_port": None,  # not responding
         },
@@ -163,3 +163,15 @@ AVRDUDE_DEFAULTS = {
 SERIAL_DEFAULTS = {
     "baudrate": "115200",
 }
+
+
+# Apply cached port overrides (last values fetched from PC 217's ports.json).
+# Kept at the bottom so COMPUTERS is fully built before we mutate it.
+try:
+    from ports_sync import load_cache, apply_overrides
+    _cached = load_cache()
+    if _cached:
+        apply_overrides(COMPUTERS, _cached)
+except Exception:
+    # Never let cache load break the app — fall back to lab_config defaults.
+    pass

@@ -5,6 +5,8 @@ import sys
 import os
 import re
 import time
+import json
+import io
 
 import paramiko
 import requests
@@ -231,6 +233,56 @@ class SFTPUploadWorker(QThread):
         except Exception as e:
             self.output.emit(f"[SFTP ERROR] {e}")
             self.finished_signal.emit(False)
+
+
+class PortsFetchWorker(QThread):
+    """Download ports.json from a remote PC via SFTP and parse it."""
+    output = Signal(str)
+    # Emits (ok: bool, data: dict). When ok is False, data is empty.
+    finished_signal = Signal(bool, dict)
+
+    def __init__(self, host, user, password, remote_path, parent=None):
+        super().__init__(parent)
+        self.host = host
+        self.user = user
+        self.password = password
+        self.remote_path = remote_path.replace("\\", "/")
+
+    def run(self):
+        client = None
+        try:
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.output.emit(f"[Ports] Connecting to {self.host}...")
+            client.connect(
+                self.host, username=self.user, password=self.password, timeout=15
+            )
+            sftp = client.open_sftp()
+            self.output.emit(f"[Ports] Fetching {self.remote_path}")
+            buf = io.BytesIO()
+            sftp.getfo(self.remote_path, buf)
+            sftp.close()
+            raw = buf.getvalue().decode("utf-8", errors="replace")
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                raise ValueError("ports.json must be a JSON object at the top level")
+            self.output.emit(f"[Ports] Fetched {len(raw)} bytes, {len(data)} PC(s).")
+            self.finished_signal.emit(True, data)
+        except FileNotFoundError:
+            self.output.emit(f"[Ports ERROR] Remote file not found: {self.remote_path}")
+            self.finished_signal.emit(False, {})
+        except json.JSONDecodeError as e:
+            self.output.emit(f"[Ports ERROR] Invalid JSON: {e}")
+            self.finished_signal.emit(False, {})
+        except Exception as e:
+            self.output.emit(f"[Ports ERROR] {e}")
+            self.finished_signal.emit(False, {})
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
 
 class CameraWorker(QThread):

@@ -1,0 +1,62 @@
+{
+  "_comment": "Lab port distribution. Deploy this file to c:\\dev\\ports.json on PC 217. Only ecu_ports, reset_port, and can_selector_port are applied; other fields in lab_config.py (flash_method, reset_script, credentials) are left untouched. Unknown PCs/boards/fields are silently ignored so stale keys won't crash the app.",
+
+  "PC 217": {
+    "Placa 01": {
+      "ecu_ports": ["COM25", "COM26", "COM27", "COM28"],
+      "reset_port": "COM57",
+      "can_selector_port": "COM57"
+    },
+    "Placa 02": {
+      "ecu_ports": ["COM29", "COM30", "COM31", "COM32"],
+      "reset_port": "COM63",
+      "can_selector_port": "COM63"
+    },
+    "Placa 03": {
+      "ecu_ports": ["COM33", "COM34", "COM35", "COM36"],
+      "reset_port": "COM59",
+      "can_selector_port": "COM59"
+    },
+    "Placa 04": {
+      "ecu_ports": ["COM17", "COM18", "COM19", "COM20"],
+      "reset_port": "COM60",
+      "can_selector_port": "COM60"
+    }
+  },
+
+  "PC 218": {
+    "Placa 01": { "ecu_ports": ["COM13", "COM14", "COM15", "COM16"] },
+    "Placa 02": { "ecu_ports": ["COM17", "COM18", "COM19", "COM20"] },
+    "Placa 03": { "ecu_ports": ["COM21", "COM22", "COM23", "COM24"] },
+    "Placa 04": { "ecu_ports": ["COM25", "COM26", "COM27", "COM28"] }
+  },
+
+  "PC 220": {
+    "Placa 01": {
+      "ecu_ports": ["COM3", "COM4", "COM5", "COM6"],
+      "reset_port": "COM31",
+      "can_selector_port": "COM31"
+    },
+    "Placa 02": {
+      "ecu_ports": ["COM15", "COM16", "COM17", "COM18"],
+      "reset_port": "COM32",
+      "can_selector_port": "COM32"
+    },
+    "Placa 03": {
+      "ecu_ports": ["COM11", "COM12", "COM13", "COM14"],
+      "reset_port": "COM33",
+      "can_selector_port": "COM33"
+    },
+    "Placa 04": {
+      "ecu_ports": ["COM7", "COM8", "COM9", "COM10"],
+      "reset_port": "COM39"
+    }
+  },
+
+  "PC 221": {
+    "Placa 01": { "ecu_ports": ["COM54", "COM55", "COM56", "COM57"] },
+    "Placa 02": { "ecu_ports": ["COM50", "COM51", "COM52", "COM53"] },
+    "Placa 03": { "ecu_ports": ["COM42", "COM43", "COM44", "COM45"] },
+    "Placa 04": { "ecu_ports": ["COM46", "COM47", "COM48", "COM49"] }
+  }
+}

@@ -1,6 +1,7 @@
 """Firmware flash tab."""
 import os
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QGroupBox, QLabel, QPushButton, QComboBox, QLineEdit, QFileDialog,
@@ -10,10 +11,16 @@ from PySide6.QtWidgets import (
 from lab_config import COMPUTERS, AVRDUDE_DEFAULTS, REMOTE_BASE_DIR, REMOTE_SCRIPTS_DIR
 from settings import get_remote_user_dir
 from widgets import LogWidget, make_log_with_clear
-from workers import SSHWorker, SCPWorker
+from workers import SSHWorker, SCPWorker, PortsFetchWorker
+from ports_sync import apply_overrides, save_cache, REMOTE_PORTS_PATH
 
 
 class FlashTab(QWidget):
+    # Emitted after ports.json is successfully fetched and COMPUTERS is
+    # updated in place. MainWindow relays this to the other tabs so their
+    # board/port combos refresh without a PC-selector round-trip.
+    ports_synced = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._workers = []
@@ -23,10 +30,19 @@ class FlashTab(QWidget):
         g = QGridLayout(ctrl)
 
         g.addWidget(QLabel("Computer:"), 0, 0)
+        pc_row = QHBoxLayout()
         self.pc_combo = QComboBox()
         self.pc_combo.addItems(COMPUTERS.keys())
         self.pc_combo.currentTextChanged.connect(self._on_pc_changed)
-        g.addWidget(self.pc_combo, 0, 1)
+        pc_row.addWidget(self.pc_combo, stretch=1)
+
+        self.sync_ports_btn = QPushButton("Sync Ports from PC 217")
+        self.sync_ports_btn.setToolTip(
+            f"Download {REMOTE_PORTS_PATH} from PC 217 and apply to all 4 PCs"
+        )
+        self.sync_ports_btn.clicked.connect(self._sync_ports)
+        pc_row.addWidget(self.sync_ports_btn)
+        g.addLayout(pc_row, 0, 1)
 
         g.addWidget(QLabel("Board:"), 1, 0)
         self.board_combo = QComboBox()
@@ -94,6 +110,47 @@ class FlashTab(QWidget):
         self.ecu_combo.clear()
         self.ecu_combo.addItems(board.get("ecu_ports", []))
 
+    def _sync_ports(self):
+        """Fetch ports.json from PC 217 and apply overrides to COMPUTERS."""
+        pc217_key = next(
+            (k for k in COMPUTERS if k.startswith("PC 217")), None
+        )
+        if not pc217_key:
+            self.log.append_log("[Ports] PC 217 not configured in lab_config.")
+            return
+        pc = COMPUTERS[pc217_key]
+        self.sync_ports_btn.setEnabled(False)
+        self.log.append_log(f"[Ports] Syncing {REMOTE_PORTS_PATH} from {pc['host']}...")
+        worker = PortsFetchWorker(
+            pc["host"], pc["user"], pc["password"], REMOTE_PORTS_PATH
+        )
+        worker.output.connect(self.log.append_log)
+        worker.finished_signal.connect(self._on_ports_fetched)
+        self._workers.append(worker)
+        worker.start()
+
+    def _on_ports_fetched(self, ok, data):
+        self.sync_ports_btn.setEnabled(True)
+        if not ok:
+            self.log.append_log("[Ports] Sync failed — keeping previous mapping.")
+            return
+        changes = apply_overrides(COMPUTERS, data)
+        try:
+            save_cache(data)
+            self.log.append_log("[Ports] Cached locally for next startup.")
+        except Exception as e:
+            self.log.append_log(f"[Ports] WARNING: could not write cache: {e}")
+        if changes:
+            self.log.append_log(f"[Ports] Applied {len(changes)} change(s):")
+            for c in changes:
+                self.log.append_log(f"  - {c}")
+        else:
+            self.log.append_log("[Ports] No changes — already in sync.")
+        # Refresh this tab's combos immediately with the new values.
+        self._on_pc_changed(self.pc_combo.currentText())
+        # Notify other tabs.
+        self.ports_synced.emit()
+
     def _browse_hex(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select HEX file", "", "HEX Files (*.hex);;All (*)")
         if path:
@@ -120,9 +177,12 @@ class FlashTab(QWidget):
         reset_script = board.get("reset_script")
         reset_port = board.get("reset_port")
         if reset_script:
+            if not reset_port:
+                self.log.append_log("[Reset] reset_port not configured for this board.")
+                return
             cmd = (f'mkdir {get_remote_user_dir()} >nul 2>&1 & cd {get_remote_user_dir()}'
                    f' && copy {REMOTE_SCRIPTS_DIR}\\{reset_script} . >nul 2>&1'
-                   f' & powershell -ExecutionPolicy Bypass -File {reset_script}')
+                   f' & powershell -ExecutionPolicy Bypass -File {reset_script} -Port {reset_port}')
         elif reset_port and pc.get("flash_method") == "flash.py":
             self.log.append_log("[Reset] This PC uses flash.py — reset is integrated into flash.")
             return
@@ -221,10 +281,11 @@ class FlashTab(QWidget):
             self._flash_firmware()
             return
         reset_script = board.get("reset_script")
-        if reset_script:
+        reset_port = board.get("reset_port")
+        if reset_script and reset_port:
             cmd = (f'mkdir {get_remote_user_dir()} >nul 2>&1 & cd {get_remote_user_dir()}'
                    f' && copy {REMOTE_SCRIPTS_DIR}\\{reset_script} . >nul 2>&1'
-                   f' & powershell -ExecutionPolicy Bypass -File {reset_script}')
+                   f' & powershell -ExecutionPolicy Bypass -File {reset_script} -Port {reset_port}')
             self.log.append_log("[All] Resetting board...")
             worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd)
             worker.output.connect(self.log.append_log)
