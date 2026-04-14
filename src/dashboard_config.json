@@ -1,0 +1,27 @@
+{
+  "gauges": [
+    {"channel": 0, "label": "RPM",   "min": 0, "max": 8000, "units": "x1000", "color": "#00e5ff", "warning": 6500},
+    {"channel": 1, "label": "Speed", "min": 0, "max": 200,  "units": "km/h",  "color": "#00e5ff", "warning": 180}
+  ],
+  "verticals": [
+    {"channel": 2, "label": "Temp",  "min": 0, "max": 120,  "units": "\u00b0C", "color": "#9b59b6", "warning": 95},
+    {"channel": 3, "label": "Fuel",  "min": 0, "max": 100,  "units": "%",   "color": "#f39c12", "warning": 15}
+  ],
+  "infoCards": [
+    {"channel": 1, "label": "Max Speed",   "units": "km/h", "color": "#00e5ff", "format": 0},
+    {"channel": 0, "label": "Avg RPM",     "units": "rpm",  "color": "#00e5ff", "format": 0},
+    {"channel": 2, "label": "Coolant",     "units": "\u00b0C",   "color": "#9b59b6", "format": 1},
+    {"channel": 3, "label": "Fuel Level",  "units": "%",    "color": "#f39c12", "format": 0}
+  ],
+  "lights": [
+    {"channel": 4, "label": "DTC",      "color": "#e74c3c", "threshold": 1},
+    {"channel": 5, "label": "BAT",      "color": "#f39c12", "threshold": 1},
+    {"channel": 6, "label": "OIL",      "color": "#e74c3c", "threshold": 1},
+    {"channel": 7, "label": "BRAKE",    "color": "#e74c3c", "threshold": 1}
+  ],
+  "plots": [
+    {"channels": [0, 1], "label": "Speed & RPM",  "type": "line", "window": 500},
+    {"channels": [2],    "label": "Temperature",   "type": "line", "window": 500},
+    {"channels": [3],    "label": "Fuel Level",    "type": "line", "window": 500}
+  ]
+}

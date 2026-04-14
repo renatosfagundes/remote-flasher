@@ -14,7 +14,11 @@ from _version import __version__
 from lab_config import COMPUTERS
 from settings import APP_DIR
 from workers import CameraWorker
-from tabs import VPNTab, FlashTab, CANTab, SerialTab, SSHTerminalTab, SetupTab
+from dashboard_backend import DashboardBackend
+from tabs import (
+    VPNTab, FlashTab, CANTab, SerialTab, SSHTerminalTab, SetupTab,
+    GaugesTab, PlotsTab,
+)
 
 
 class CameraPanel(QWidget):
@@ -108,10 +112,18 @@ class MainWindow(QMainWindow):
         self.ssh_tab = SSHTerminalTab()
         self.setup_tab = SetupTab()
 
+        # Dashboard backend (shared by Gauges + Plots tabs)
+        self.dashboard_backend = DashboardBackend()
+        self.gauges_tab = GaugesTab(self.dashboard_backend)
+        self.plots_tab = PlotsTab(self.dashboard_backend)
+        self._dashboard_source_panel = None
+
         self.tabs.addTab(self.vpn_tab, "VPN")
         self.tabs.addTab(self.flash_tab, "Flash")
         self.tabs.addTab(self.can_tab, "CAN")
         self.tabs.addTab(self.serial_tab, "Serial")
+        self.tabs.addTab(self.gauges_tab, "Gauges")
+        self.tabs.addTab(self.plots_tab, "Plots")
         self.tabs.addTab(self.ssh_tab, "SSH Terminal")
         self.tabs.addTab(self.setup_tab, "Setup")
 
@@ -129,6 +141,11 @@ class MainWindow(QMainWindow):
 
         self.serial_tab.panel_count_changed.connect(self._on_serial_panel_count)
         self.flash_tab.ports_synced.connect(self._on_ports_synced)
+
+        # Dashboard source wiring
+        self.serial_tab.panel_count_changed.connect(self._refresh_dashboard_sources)
+        self.gauges_tab.source_changed.connect(self._on_dashboard_source)
+        self.plots_tab.source_changed.connect(self._on_dashboard_source)
 
         self.toggle_cam_btn = QPushButton("Hide Camera")
         self.toggle_cam_btn.setCheckable(True)
@@ -180,11 +197,68 @@ class MainWindow(QMainWindow):
             self.main_splitter.setSizes([int(total * 0.75), int(total * 0.25)])
 
     def _update_camera_visibility(self):
-        hide_camera = self.tabs.currentWidget() in (self.vpn_tab, self.setup_tab)
+        hide_camera = self.tabs.currentWidget() in (
+            self.vpn_tab, self.setup_tab, self.gauges_tab, self.plots_tab,
+        )
         self.camera_panel.setVisible(not hide_camera and self._camera_visible)
         self.toggle_cam_btn.setVisible(not hide_camera)
 
+    # ------------------------------------------------------------------
+    # Dashboard source management
+    # ------------------------------------------------------------------
+
+    def _refresh_dashboard_sources(self, _count=None):
+        """Rebuild the source combo in both dashboard tabs."""
+        for combo in (self.gauges_tab.source_combo, self.plots_tab.source_combo):
+            prev = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("(none)", userData=-1)
+            for i, panel in enumerate(getattr(self.serial_tab, "panels", [])):
+                worker = getattr(panel, "serial_worker", None)
+                if worker is not None:
+                    key = getattr(panel, "_connected_port_key", None)
+                    label = f"Serial {i + 1}"
+                    if key:
+                        label += f" \u2014 {key}"
+                    combo.addItem(label, userData=i)
+            # Restore previous selection if still valid
+            idx = combo.findData(prev)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            combo.blockSignals(False)
+
+    def _on_dashboard_source(self, panel_index: int):
+        """Connect the selected serial panel's worker to the dashboard backend."""
+        # Disconnect previous source
+        if self._dashboard_source_panel is not None:
+            worker = getattr(self._dashboard_source_panel, "serial_worker", None)
+            if worker is not None:
+                try:
+                    worker.output.disconnect(self.dashboard_backend.onSerialLine)
+                except RuntimeError:
+                    pass
+            self._dashboard_source_panel = None
+
+        # Connect new source
+        panels = getattr(self.serial_tab, "panels", [])
+        if 0 <= panel_index < len(panels):
+            panel = panels[panel_index]
+            worker = getattr(panel, "serial_worker", None)
+            if worker is not None:
+                worker.output.connect(self.dashboard_backend.onSerialLine)
+                self._dashboard_source_panel = panel
+
+        # Sync the other tab's combo
+        sender_combo = self.sender()
+        for combo in (self.gauges_tab.source_combo, self.plots_tab.source_combo):
+            if combo is not sender_combo:
+                combo.blockSignals(True)
+                idx = combo.findData(panel_index)
+                combo.setCurrentIndex(idx if idx >= 0 else 0)
+                combo.blockSignals(False)
+
     def closeEvent(self, event):
+        self.dashboard_backend.stopLogging()
         if self.vpn_tab._connected:
             msg = QMessageBox(self)
             msg.setWindowTitle("VPN Connected")
