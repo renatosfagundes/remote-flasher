@@ -17,7 +17,7 @@ from workers import CameraWorker
 from dashboard_backend import DashboardBackend
 from tabs import (
     VPNTab, FlashTab, CANTab, SerialTab, SSHTerminalTab, SetupTab,
-    GaugesTab, PlotsTab,
+    GaugesTab, PlotsTab, HMIDashboardTab,
 )
 
 
@@ -112,9 +112,9 @@ class MainWindow(QMainWindow):
         self.ssh_tab = SSHTerminalTab()
         self.setup_tab = SetupTab()
 
-        # Dashboard backend (shared by Gauges + Plots tabs)
+        # Dashboard backend (shared by HMI Dashboard + Plots tabs)
         self.dashboard_backend = DashboardBackend()
-        self.gauges_tab = GaugesTab(self.dashboard_backend)
+        self.gauges_tab = HMIDashboardTab(self.dashboard_backend)
         self.plots_tab = PlotsTab(self.dashboard_backend)
         self._dashboard_source_panel = None
 
@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.flash_tab, "Flash")
         self.tabs.addTab(self.can_tab, "CAN")
         self.tabs.addTab(self.serial_tab, "Serial")
-        self.tabs.addTab(self.gauges_tab, "Gauges")
+        self.tabs.addTab(self.gauges_tab, "Dashboard")
         self.tabs.addTab(self.plots_tab, "Plots")
         self.tabs.addTab(self.ssh_tab, "SSH Terminal")
         self.tabs.addTab(self.setup_tab, "Setup")
@@ -142,9 +142,9 @@ class MainWindow(QMainWindow):
         self.serial_tab.panel_count_changed.connect(self._on_serial_panel_count)
         self.flash_tab.ports_synced.connect(self._on_ports_synced)
 
-        # Dashboard source wiring
+        # Dashboard source wiring (Plots tab has the source selector;
+        # HMI Dashboard tab shares the same backend and receives data too.)
         self.serial_tab.panel_count_changed.connect(self._refresh_dashboard_sources)
-        self.gauges_tab.source_changed.connect(self._on_dashboard_source)
         self.plots_tab.source_changed.connect(self._on_dashboard_source)
 
         self.toggle_cam_btn = QPushButton("Hide Camera")
@@ -208,8 +208,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _refresh_dashboard_sources(self, _count=None):
-        """Rebuild the source combo in both dashboard tabs."""
-        for combo in (self.gauges_tab.source_combo, self.plots_tab.source_combo):
+        """Rebuild the source combo in dashboard tabs that have one."""
+        for combo in (self.plots_tab.source_combo,):
             prev = combo.currentData()
             combo.blockSignals(True)
             combo.clear()
@@ -248,14 +248,7 @@ class MainWindow(QMainWindow):
                 worker.output.connect(self.dashboard_backend.onSerialLine)
                 self._dashboard_source_panel = panel
 
-        # Sync the other tab's combo
-        sender_combo = self.sender()
-        for combo in (self.gauges_tab.source_combo, self.plots_tab.source_combo):
-            if combo is not sender_combo:
-                combo.blockSignals(True)
-                idx = combo.findData(panel_index)
-                combo.setCurrentIndex(idx if idx >= 0 else 0)
-                combo.blockSignals(False)
+        # (No cross-tab combo sync needed — only Plots has a source selector now.)
 
     def closeEvent(self, event):
         self.dashboard_backend.stopLogging()

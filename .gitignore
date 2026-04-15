@@ -18,3 +18,4 @@ RemoteFlasher_v*.spec
 # Python cache
 __pycache__/
 *.pyc
+third_party/
