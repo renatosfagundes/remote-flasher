@@ -1,0 +1,57 @@
+I have a dashboard reference image showing 3 modes side-by-side
+(Mode 1 Electric, Mode 2 Combustion Auto, Mode 3 Combustion Manual).
+Attached: Gemini_Generated_Image_sfliybsfliybsfli.png
+
+My existing Qt6 QML components (already in ./hmi/):
+- Gauge.qml (s, value, maximumValue, labelStepSize, minorTickStep,
+  unitLabel, accentColor, redZoneStart)
+- RadialBar (CustomControls 1.0, s, value, minValue, maxValue,
+  dialWidth, progressColor, startAngle, spanAngle, penStyle, dialType)
+- WarningIcons.qml (iconType, iconColor, active, s)
+- DoorStatus.qml (doorFL/FR/RL/RR, trunk, hood, s)
+
+Dashboard context property: `dashboard` exposes
+  speed, rpm, coolantTemp, fuelLevel, battery, power, rangeKm,
+  distance, avgSpeed, gear (int -1=R, 0=N, 1-6, 7=P, 8=D)
+Always use null-safe: `dashboard ? dashboard.speed : 0`
+
+Generate THREE files that match the reference image layout:
+
+=== 1. ElectricMode.qml ===
+- Battery radial gauge on the LEFT (use RadialBar)
+- Speed Gauge on the RIGHT
+- Centre text column showing: battery %, range km, power kW
+- Dark bg #101616 with subtle gradient border
+
+=== 2. CombustionAutoMode.qml ===
+- RPM Gauge on the LEFT (maximumValue: 8000, redZoneStart: 6500,
+  accentColor: "#3498db")
+- Speed Gauge on the RIGHT (maximumValue: 220, accentColor: "#01E6DE")
+- Centre VERTICAL column showing P / R / N / D stacked,
+  active one highlighted cyan
+- Same dark bg
+
+=== 3. CombustionManualMode.qml ===
+- RPM Gauge LEFT, Speed Gauge RIGHT (same as auto)
+- Centre: H-PATTERN SHIFT DIAGRAM (NEW!) drawn in Canvas:
+  * Three vertical gates (1-2, 3-4, 5-6) plus R on the far right
+  * Gates drawn as short vertical lines connected by horizontal rail
+    at centre
+  * Each position labeled: 1 top-left, 2 bottom-left, 3 top-middle,
+    4 bottom-middle, 5 top-right-middle, 6 bottom-right-middle,
+    R top-right
+  * Current gear position highlighted with a cyan filled dot + glow
+  * Design like a real manual shift pattern diagram found in car
+    manuals
+
+Each mode is an Item with `property real s: 1.0`. Use the existing
+components by name (no imports needed, they're siblings).
+
+IMPORTANT: Test wrappers must give the Window an `id: win` and
+use `target: win` in animations — never `target: parent`.
+
+Output: three complete .qml files AND a TestAllModes.qml that
+StackLayouts through them every 3 seconds so I can preview with
+`pyside6-qml TestAllModes.qml`.
+
+Package everything into a downloadable .zip.

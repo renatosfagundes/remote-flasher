@@ -1,0 +1,193 @@
+Great, the Gauge looks good! Now I need you to design the remaining dashboard components in the same visual style. Each should be a standalone .qml file plus a Test*.qml preview wrapper.
+
+Use the same constraints as before (Qt6 Canvas, no QtGraphicalEffects, `s` scale factor, `sans-serif` font, dark background `#0c0c14`).
+
+IMPORTANT: At the end, package ALL .qml files (components + test wrappers) into a single downloadable .zip file so I can extract them all at once.
+
+== Component 1: MiniGauge.qml ==
+
+A small half-arc gauge (180 deg sweep) for coolant temperature and fuel level. Used at the edges of the combustion dashboard.
+
+Properties:
+  property real value: 50
+  property real minValue: 0
+  property real maxValue: 100
+  property string label: "FUEL"
+  property string units: "%"
+  property color barColor: "#f39c12"
+  property real dangerAbove: -1       // turns red above this (e.g. 100 for temp)
+  property real dangerBelow: -1       // turns red below this (e.g. 15 for fuel)
+  property real s: 1.0
+
+Visual: half-circle arc (flat bottom), thick filled arc, value number in the centre, label below. Should look like a miniature version of the main Gauge — same depth ring and glow style but smaller. Size: ~130x90 * s.
+
+Test wrapper (TestMiniGauge.qml):
+
+  import QtQuick 2.15
+  import QtQuick.Window 2.15
+  Window {
+      width: 400; height: 300; visible: true; color: "#0c0c14"
+      property real tv: 0
+      Row {
+          anchors.centerIn: parent; spacing: 40
+          MiniGauge { s: 1.5; value: tv; maxValue: 130; label: "TEMP"; units: "\u00B0C"; barColor: "#3498db"; dangerAbove: 100 }
+          MiniGauge { s: 1.5; value: tv; maxValue: 100; label: "FUEL"; units: "%"; barColor: "#f39c12"; dangerBelow: 15 }
+      }
+      SequentialAnimation {
+          running: true; loops: Animation.Infinite
+          NumberAnimation { target: parent; property: "tv"; from: 0; to: 130; duration: 3000 }
+          NumberAnimation { target: parent; property: "tv"; from: 130; to: 0; duration: 2000 }
+      }
+  }
+
+
+== Component 2: DoorStatus.qml ==
+
+A top-down bird's-eye car outline with 6 indicators: 4 doors (FL, FR, RL, RR) + hood + trunk. Green = closed, red = open.
+
+Properties:
+  property bool doorFL: false
+  property bool doorFR: false
+  property bool doorRL: false
+  property bool doorRR: false
+  property bool trunk: false
+  property bool hood: false
+
+Visual: Draw a simple but recognizable car body from above using Canvas (rounded rectangle with windshield/rear-window lines). Each door is a small rounded rectangle on the car's side. Hood/trunk are at the front/back. When closed: dark green with subtle glow. When open: neon red with glow. The car outline itself should be a subtle gray.
+
+Size: ~150x100 (compact, sits in a bottom bar).
+
+Test wrapper (TestDoorStatus.qml):
+
+  import QtQuick 2.15
+  import QtQuick.Window 2.15
+  Window {
+      width: 400; height: 300; visible: true; color: "#0c0c14"
+      DoorStatus {
+          anchors.centerIn: parent; width: 250; height: 160
+          doorFL: true; doorFR: false; doorRL: false; doorRR: true; trunk: true; hood: false
+      }
+  }
+
+
+== Component 3: PowerBar.qml ==
+
+A horizontal power/regeneration bar for electric mode. Centre = zero, left = regen (green), right = power output (cyan). Shows kW value.
+
+Properties:
+  property real value: 0        // kW, negative = regen
+  property real maxPower: 300
+  property real maxRegen: 100
+  property real s: 1.0
+
+Visual: A sleek horizontal bar with rounded ends. The zero-point is marked with a subtle vertical line. Regen fills left in green with glow, power fills right in cyan with glow. A kW readout below. Should look like a premium EV power meter.
+
+Size: ~300x50 * s.
+
+Test wrapper (TestPowerBar.qml):
+
+  import QtQuick 2.15
+  import QtQuick.Window 2.15
+  Window {
+      width: 500; height: 200; visible: true; color: "#0c0c14"
+      property real tv: 0
+      PowerBar { anchors.centerIn: parent; s: 1.5; value: tv; width: 400; height: 70 }
+      SequentialAnimation {
+          running: true; loops: Animation.Infinite
+          NumberAnimation { target: parent; property: "tv"; from: -80; to: 250; duration: 3000 }
+          NumberAnimation { target: parent; property: "tv"; from: 250; to: -80; duration: 2000 }
+      }
+  }
+
+
+== Component 4: WarningLights.qml (NEW) ==
+
+A row of automotive warning indicator lights: CHECK ENGINE, OIL, BATTERY, BRAKE, ABS, AIRBAG. Each light is a small circular icon that is dim when inactive and glows brightly when active.
+
+Properties:
+  property bool checkEngine: false
+  property bool oilPressure: false
+  property bool batteryWarn: false
+  property bool brakeWarn: false
+  property bool absWarn: false
+  property bool airbagWarn: false
+  property real s: 1.0
+
+Visual: Each light is a circle (~24*s px) with a Unicode symbol or simple Canvas icon inside. Inactive = dark gray (#222). Active = bright color with glow:
+  - Check engine: amber/orange (#f39c12)
+  - Oil: red (#e74c3c)
+  - Battery: red (#e74c3c)
+  - Brake: red (#e74c3c)
+  - ABS: amber (#f39c12)
+  - Airbag: red (#e74c3c)
+
+Draw each as a Canvas circle with radial gradient for the "lit" glow effect.
+
+Test wrapper (TestWarningLights.qml):
+
+  import QtQuick 2.15
+  import QtQuick.Window 2.15
+  Window {
+      width: 500; height: 150; visible: true; color: "#0c0c14"
+      WarningLights {
+          anchors.centerIn: parent; s: 1.8
+          checkEngine: true; oilPressure: false; batteryWarn: true
+          brakeWarn: false; absWarn: true; airbagWarn: false
+      }
+  }
+
+
+== Component 5: GearSelector.qml ==
+
+A gear indicator display. For automatic: P R N D. For manual: N R 1 2 3 4 5 6. The active gear is highlighted, others are dim.
+
+Properties:
+  property int gearValue: 7      // -1=R, 0=N, 1-6=fwd, 7=P, 8=D
+  property bool isAutomatic: true
+  property real s: 1.0
+
+Visual: The active gear letter/number should be large and bright (white or accent color) with a subtle glow/underline. Inactive gears are small and dim. This should look like a real digital gear indicator in a car dashboard.
+
+Test wrapper (TestGearSelector.qml):
+
+  import QtQuick 2.15
+  import QtQuick.Window 2.15
+  Window {
+      width: 500; height: 150; visible: true; color: "#0c0c14"
+      property int tg: 8
+      Column {
+          anchors.centerIn: parent; spacing: 30
+          GearSelector { s: 1.5; gearValue: tg; isAutomatic: true }
+          GearSelector { s: 1.5; gearValue: 3; isAutomatic: false }
+      }
+      SequentialAnimation {
+          running: true; loops: Animation.Infinite
+          NumberAnimation { target: parent; property: "tg"; from: 7; to: 8; duration: 1500 }
+          NumberAnimation { target: parent; property: "tg"; from: 8; to: 0; duration: 1500 }
+          NumberAnimation { target: parent; property: "tg"; from: 0; to: -1; duration: 1500 }
+          NumberAnimation { target: parent; property: "tg"; from: -1; to: 7; duration: 1500 }
+      }
+  }
+
+
+== Deliverables ==
+
+For each component, give me:
+1. The complete .qml file
+2. The Test*.qml preview file
+
+Then PACKAGE EVERYTHING into a single downloadable .zip file containing:
+  - Gauge.qml (the current working version with red zone support)
+  - MiniGauge.qml
+  - DoorStatus.qml
+  - PowerBar.qml
+  - WarningLights.qml
+  - GearSelector.qml
+  - TestGauge.qml
+  - TestMiniGauge.qml
+  - TestDoorStatus.qml
+  - TestPowerBar.qml
+  - TestWarningLights.qml
+  - TestGearSelector.qml
+
+I'll preview each with: pyside6-qml Test*.qml

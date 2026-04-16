@@ -1,0 +1,77 @@
+ATTACHED FILES:
+- Gemini_Generated_Image_sfliybsfliybsfli.png  — visual reference (the 3-mode mockup)
+- CombustionAutoMode.qml   — TO MODIFY (current version you wrote previously)
+- CombustionManualMode.qml — TO MODIFY (current version you wrote previously)
+- GearSelector.qml         — reference only (existing component you MAY reuse)
+- WarningIcons.qml         — reference only (do not change)
+
+Use the attached .qml files as the starting point. Edit them in place —
+don't rewrite from scratch or drop any of the non-gear content
+(RPM/Speed gauges, temp/fuel MiniGauges, warning icons row, odometer
+box, anchors). Only the gear-selector section of each file changes.
+
+=== Problem ===
+
+The gear selectors in CombustionAutoMode and CombustionManualMode don't
+match the reference image (Gemini_Generated_Image_sfliybsfliybsfli.png).
+
+Currently they're HUGE vertically-stacked letters. The reference shows
+something very different — look at the centre column of Mode 2 and Mode 3.
+
+=== What the reference shows ===
+
+Mode 2 (Combustion Auto):
+  - Compact horizontal box with P R N D letters side-by-side
+  - Active gear highlighted (cyan background or filled rectangle)
+  - Small — fits in the gap between the two main gauges
+  - Clean, modern automotive-cluster look
+
+Mode 3 (Combustion Manual):
+  - H-pattern shift diagram (already added)
+  - PLUS a big current-gear readout showing the number (1-6/R/N) in a
+    compact box, so the driver can see at a glance what gear they're in
+
+=== Redesign needed ===
+
+--- CombustionAutoMode.qml ---
+Replace the vertical P/R/N/D stack with a compact HORIZONTAL box:
+  * A small rounded Rectangle (maybe 140 * s wide, 44 * s tall)
+  * Inside: Row of "P", "R", "N", "D" letters evenly spaced
+  * Active letter: cyan colour + bold + slightly larger, or cyan pill
+    background behind it
+  * Inactive letters: dim grey (#444)
+  * Position: centred between the two main gauges, at or above the
+    odometer box
+  * Style: like a real automatic-transmission selector readout
+
+--- CombustionManualMode.qml ---
+ADD a big current-gear readout above the H-pattern diagram:
+  * Rounded Rectangle (e.g. 80 * s square)
+  * Inside: single large character showing the current gear:
+      "N" if gear === 0
+      "R" if gear === -1
+      "1"-"6" if gear === 1..6
+  * Active: cyan glow, white bold text (font.pixelSize ~50 * s)
+  * Keeps the H-pattern below it
+  * This way the driver sees the gear number immediately, and the
+    H-pattern confirms the position on the stick
+
+=== Keep ===
+- RPM gauge on left, Speed gauge on right
+- Temp MiniGauge far left, Fuel MiniGauge far right
+- Odometer box
+- Warning icons row
+
+=== Files to update ===
+- CombustionAutoMode.qml (replace centre gear stack)
+- CombustionManualMode.qml (add current-gear box above H-pattern)
+
+=== Rules reminder ===
+- No `[cite: ...]` markers in output
+- Repeater model arrays MUST use `[...]`
+- No `readonly property` inside JS function bodies
+- Dashboard properties: `checkEngine`, `oilPressure`, `batteryWarn`,
+  `brakeWarn`, `absWarn`, `airbagWarn` (not `warningEngine` etc.)
+- Always null-safe: `dashboard ? dashboard.gear : 0`
+
+Package updates in a zip with a `changes.txt` summary.

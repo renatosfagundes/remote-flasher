@@ -1,0 +1,417 @@
+The three mode layouts look great, but they're missing several important
+peripheral elements. Please ENHANCE each mode by adding the elements listed
+below WITHOUT redesigning the core layout. The main gauges stay where they
+are — we're adding around the edges.
+
+Available components (already in same folder, reference by name):
+- WarningIcons.qml (iconType: "engine"/"oil"/"battery"/"brake"/"abs"/"airbag",
+  iconColor, active, s)
+- MiniGauge.qml (label, value, minValue, maxValue, units, barColor,
+  dangerAbove, dangerBelow, s)
+- PowerBar.qml (value, maxPower, maxRegen, s)
+- DoorStatus.qml (doorFL, doorFR, doorRL, doorRR, trunk, hood, s)
+- GearSelector.qml (gearValue, isAutomatic, s)
+- Gauge.qml (s, value, maximumValue, labelStepSize, minorTickStep,
+  unitLabel, accentColor, redZoneStart)
+
+Dashboard properties (ALWAYS null-safe: `dashboard ? dashboard.X : default`):
+  speed, rpm, coolantTemp, fuelLevel, battery, power, rangeKm,
+  distance, avgSpeed, gear, doorFL/FR/RL/RR, trunk, hood
+
+=============================================================
+CHANGES TO MAKE
+=============================================================
+
+=== ElectricMode.qml ===
+ADD:
+1. PowerBar below the speed gauge showing dashboard.power (kW)
+2. Row of WarningIcons at the bottom-left corner:
+   engine, battery, brake (s = s * 0.3)
+3. Info entry for distance in the centre column (alongside range/power)
+
+=== CombustionAutoMode.qml ===
+ADD:
+1. MiniGauge on the FAR LEFT for coolant temp (label: "TEMP",
+   maxValue: 130, barColor: "#3498db", dangerAbove: 100, units: "°C")
+2. MiniGauge on the FAR RIGHT for fuel (label: "FUEL", maxValue: 100,
+   barColor: "#f39c12", dangerBelow: 15, units: "%")
+3. Row of WarningIcons at the bottom centre (below the P/R/N/D column):
+   engine, oil, battery, brake, abs, airbag (s = s * 0.28)
+4. Small odometer box in the centre column above P/R/N/D showing
+   dashboard.distance in km
+
+=== CombustionManualMode.qml ===
+ADD (same as auto plus shift diagram improvements):
+1. MiniGauge on the FAR LEFT (TEMP, as above)
+2. MiniGauge on the FAR RIGHT (FUEL, as above)
+3. Row of WarningIcons at the bottom (same 6)
+4. Small odometer box above the H-shift diagram
+
+ALSO fix the H-pattern diagram — the current labels overlap.
+Proper shift pattern layout:
+  Top row:    1     3     5     (R in top-right, isolated)
+  Bottom row: 2     4     6
+  Three vertical gates connected by horizontal rail at centre.
+  Use more spacing between gates so numbers don't collide.
+
+=== Do NOT change ===
+- Main RPM/Speed gauge sizes or positions
+- The overall horizontal RowLayout structure
+- The battery radial bar in electric mode
+
+Test wrapper: update TestAllModes.qml if needed.
+
+=============================================================
+CURRENT FILES TO ENHANCE (USE THESE AS THE BASE)
+=============================================================
+
+--- ElectricMode.qml ---
+// ElectricMode.qml
+import QtQuick 2.15
+import QtQuick.Layouts 1.15
+import CustomControls 1.0 // RadialBar is in CustomControls 1.0
+
+Item {
+    id: root
+    property real s: 1.0 // Scale factor
+
+    width: 1200 * s
+    height: 650 * s
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#101616"
+        radius: 10 * s
+        border.color: "#252540"
+        border.width: 1 * s
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 40 * s
+        spacing: 20 * s
+
+        // Battery radial gauge on the LEFT
+        RadialBar {
+            id: batteryBar
+            Layout.preferredWidth: parent.width * 0.35
+            Layout.fillHeight: true
+            penStyle: Qt.RoundCap; dialType: 2
+            progressColor: "#01E4E0"; backgroundColor: "transparent"
+            dialWidth: Math.max(5 * s, width * 0.06)
+            startAngle: 270; spanAngle: 3.6 * value
+            minValue: 0; maxValue: 100
+            value: dashboard ? dashboard.battery : 71
+            showText: false; suffixText: ""; textColor: "#FFFFFF"
+            Behavior on value { NumberAnimation { duration: 800 } }
+
+            Column {
+                anchors.centerIn: parent
+                Text {
+                    text: batteryBar.value.toFixed(0) + "%"
+                    font.pixelSize: Math.max(16 * s, batteryBar.width * 0.22)
+                    font.family: "Consolas"; font.bold: true; color: "#fff"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+                Text {
+                    text: "Battery"
+                    font.pixelSize: Math.max(9 * s, batteryBar.width * 0.10)
+                    font.family: "sans-serif"; color: "#aaa"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+            }
+        }
+
+        // Centre text column showing: battery %, range km, power kW
+        ColumnLayout {
+            Layout.preferredWidth: parent.width * 0.2
+            Layout.fillHeight: true
+            spacing: 15 * s
+
+            Text {
+                text: (dashboard ? dashboard.battery : 71).toFixed(0) + "%"
+                font.pixelSize: Math.max(11 * s, 18 * s)
+                font.family: "Consolas"; font.bold: true; color: "#fff"
+                Layout.alignment: Qt.AlignHCenter
+            }
+            Text {
+                text: "Battery"
+                font.pixelSize: Math.max(8 * s, 11 * s)
+                font.family: "sans-serif"; color: "#888"
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            RowLayout {
+                spacing: 10 * s
+                Image { width: 32 * s; height: 24 * s; source: "assets/road.svg"; fillMode: Image.PreserveAspectFit; Layout.alignment: Qt.AlignVCenter }
+                ColumnLayout {
+                    Text { text: (dashboard ? dashboard.rangeKm : 188).toFixed(0) + " km";
+                        font.pixelSize: Math.max(11 * s, 18 * s); font.family: "Consolas"; font.bold: true; color: "#fff" }
+                    Text { text: "Range";
+                        font.pixelSize: Math.max(8 * s, 11 * s); font.family: "sans-serif"; color: "#888" }
+                }
+            }
+
+            Text {
+                text: (dashboard ? dashboard.power : 0).toFixed(0) + " kW"
+                font.pixelSize: Math.max(11 * s, 18 * s)
+                font.family: "Consolas"; font.bold: true; color: "#fff"
+                Layout.alignment: Qt.AlignHCenter
+            }
+            Text {
+                text: "Power"
+                font.pixelSize: Math.max(8 * s, 11 * s)
+                font.family: "sans-serif"; color: "#888"
+                Layout.alignment: Qt.AlignHCenter
+            }
+        }
+
+        // Speed Gauge on the RIGHT
+        Gauge {
+            id: speedGauge
+            s: root.s
+            Layout.preferredWidth: parent.width * 0.35
+            Layout.fillHeight: true
+            value: dashboard ? dashboard.speed : 0
+            maximumValue: 250; labelStepSize: 20; minorTickStep: 10
+            unitLabel: "km/h"; redZoneStart: -1
+            Behavior on value { NumberAnimation { duration: 600 } }
+        }
+    }
+}
+
+--- CombustionAutoMode.qml ---
+// CombustionAutoMode.qml
+import QtQuick 2.15
+import QtQuick.Layouts 1.15
+
+Item {
+    id: root
+    property real s: 1.0
+
+    width: 1200 * s
+    height: 650 * s
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#101616"
+        radius: 10 * s
+        border.color: "#252540"
+        border.width: 1 * s
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 40 * s
+        spacing: 20 * s
+
+        // RPM Gauge on the LEFT
+        Gauge {
+            id: rpmGauge
+            s: root.s
+            Layout.preferredWidth: parent.width * 0.35
+            Layout.fillHeight: true
+            value: dashboard ? dashboard.rpm : 0
+            maximumValue: 8000; labelStepSize: 1000; minorTickStep: 500
+            unitLabel: "x1000"; accentColor: "#3498db"; redZoneStart: 6500
+            Behavior on value { NumberAnimation { duration: 400 } }
+        }
+
+        // Centre VERTICAL column showing P / R / N / D stacked
+        ColumnLayout {
+            Layout.preferredWidth: parent.width * 0.2
+            Layout.fillHeight: true
+            spacing: 10 * s
+
+            readonly property int currentGear: dashboard ? dashboard.gear : 7
+
+            Repeater {
+                model: [
+                    { t: "P", v: 7 },
+                    { t: "R", v: -1 },
+                    { t: "N", v: 0 },
+                    { t: "D", v: 8 }
+                ]
+
+                Text {
+                    id: gearText
+                    text: modelData.t
+                    font.pixelSize: Math.max(30 * s, 48 * s)
+                    font.family: "Consolas"; font.bold: true
+                    color: (root.currentGear === modelData.v) ? "#01E6DE" : "#444"
+                    Behavior on color { ColorAnimation { duration: 200 } }
+                    Layout.alignment: Qt.AlignHCenter
+                }
+            }
+        }
+
+        // Speed Gauge on the RIGHT
+        Gauge {
+            id: speedGauge
+            s: root.s
+            Layout.preferredWidth: parent.width * 0.35
+            Layout.fillHeight: true
+            value: dashboard ? dashboard.speed : 0
+            maximumValue: 220; labelStepSize: 20; minorTickStep: 10
+            unitLabel: "km/h"; accentColor: "#01E6DE"; redZoneStart: -1
+            Behavior on value { NumberAnimation { duration: 600 } }
+        }
+    }
+}
+
+--- CombustionManualMode.qml ---
+// CombustionManualMode.qml
+import QtQuick 2.15
+import QtQuick.Layouts 1.15
+
+Item {
+    id: root
+    property real s: 1.0
+
+    width: 1200 * s
+    height: 650 * s
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#101616"
+        radius: 10 * s
+        border.color: "#252540"
+        border.width: 1 * s
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 40 * s
+        spacing: 20 * s
+
+        // RPM Gauge on the LEFT
+        Gauge {
+            id: rpmGauge
+            s: root.s
+            Layout.preferredWidth: parent.width * 0.35
+            Layout.fillHeight: true
+            value: dashboard ? dashboard.rpm : 0
+            maximumValue: 8000; labelStepSize: 1000; minorTickStep: 500
+            unitLabel: "x1000"; accentColor: "#3498db"; redZoneStart: 6500
+            Behavior on value { NumberAnimation { duration: 400 } }
+        }
+
+        // Centre: H-PATTERN SHIFT DIAGRAM
+        Canvas {
+            Layout.preferredWidth: parent.width * 0.2
+            Layout.fillHeight: true
+            onPaint: {
+                var ctx = getContext("2d");
+                ctx.reset();
+                ctx.save();
+
+                var cx = width / 2;
+                var cy = height / 2;
+
+                ctx.lineWidth = 3 * root.s;
+                ctx.strokeStyle = "rgba(255,255,255,0.4)";
+                ctx.lineCap = "round";
+
+                var gateW = 30 * root.s;
+                var gateH = 60 * root.s;
+                var railY = cy;
+
+                var x_12 = cx - gateW;
+                var x_34 = cx;
+                var x_56R = cx + gateW;
+
+                // Horizontal rail
+                ctx.beginPath();
+                ctx.moveTo(x_12, railY);
+                ctx.lineTo(x_56R, railY);
+                ctx.stroke();
+
+                // Vertical gates
+                ctx.beginPath(); ctx.moveTo(x_12, railY - gateH / 2); ctx.lineTo(x_12, railY + gateH / 2); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(x_34, railY - gateH / 2); ctx.lineTo(x_34, railY + gateH / 2); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(x_56R, railY - gateH / 2); ctx.lineTo(x_56R, railY + gateH / 2); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(x_56R + 10 * root.s, railY - gateH / 2); ctx.lineTo(x_56R + 10 * root.s, railY + gateH / 2); ctx.stroke();
+
+                ctx.font = (16 * root.s) + "px sans-serif";
+                ctx.fillStyle = "#aaa";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+
+                ctx.fillText("2", x_12, railY + gateH / 2 + 10 * root.s);
+                ctx.fillText("3", x_34, railY - gateH / 2 - 10 * root.s);
+                ctx.fillText("4", x_34, railY + gateH / 2 + 10 * root.s);
+                ctx.fillText("5", x_56R, railY - gateH / 2 - 10 * root.s);
+                ctx.fillText("6", x_56R, railY + gateH / 2 + 10 * root.s);
+                ctx.fillText("R", x_56R + 10 * root.s, railY - gateH / 2 - 10 * root.s);
+
+                var currentGear = dashboard ? dashboard.gear : 0;
+                if (currentGear !== 0 && currentGear !== 7 && currentGear !== 8) {
+                    var px = cx;
+                    var py = cy;
+                    switch (currentGear) {
+                        case -1: px = x_56R + 10 * root.s; py = railY - gateH / 2; break;
+                        case 1: px = x_12; py = railY - gateH / 2; break;
+                        case 2: px = x_12; py = railY + gateH / 2; break;
+                        case 3: px = x_34; py = railY - gateH / 2; break;
+                        case 4: px = x_34; py = railY + gateH / 2; break;
+                        case 5: px = x_56R; py = railY - gateH / 2; break;
+                        case 6: px = x_56R; py = railY + gateH / 2; break;
+                    }
+
+                    ctx.shadowBlur = 15 * root.s;
+                    ctx.shadowColor = "#01E6DE";
+                    ctx.fillStyle = "#01E6DE";
+
+                    ctx.beginPath();
+                    ctx.arc(px, py, 6 * root.s, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // Speed Gauge on the RIGHT
+        Gauge {
+            id: speedGauge
+            s: root.s
+            Layout.preferredWidth: parent.width * 0.35
+            Layout.fillHeight: true
+            value: dashboard ? dashboard.speed : 0
+            maximumValue: 220; labelStepSize: 20; minorTickStep: 10
+            unitLabel: "km/h"; accentColor: "#01E6DE"; redZoneStart: -1
+            Behavior on value { NumberAnimation { duration: 600 } }
+        }
+    }
+}
+
+=============================================================
+QML RULES TO RESPECT (common mistakes to avoid)
+=============================================================
+1. Repeater `model:` arrays MUST start with `[` — e.g.
+   `model: [ { t: "P", v: 7 }, ... ]`
+2. NEVER declare `readonly property` inside a JS function body
+   (onPaint, onClicked, etc.). Inside JS use `var currentGear = ...`.
+3. Test-harness Windows need `id: win` and
+   `NumberAnimation { target: win; property: "X"; ... }` — never
+   `target: parent` at a Window root.
+4. Use `font.family: "sans-serif"` (or "Consolas") — not "Inter".
+5. Always null-safe: `dashboard ? dashboard.X : defaultValue`.
+
+=============================================================
+DELIVERABLE
+=============================================================
+Output complete updated versions of:
+  - ElectricMode.qml
+  - CombustionAutoMode.qml
+  - CombustionManualMode.qml
+  - TestAllModes.qml (if changes needed)
+
+Package all into a single downloadable .zip file.
+
+ALSO generate a plain-text report file `changes.txt` inside the zip
+summarising what you changed in each file, any decisions you made,
+and anything I should know when I paste the files back into my
+workflow. Keep the report concise — one short paragraph per file
+plus a bullet list of additions is plenty. This makes it easy for me
+to relay the context back to Claude for integration.
