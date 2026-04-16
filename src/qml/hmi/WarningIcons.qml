@@ -2,10 +2,14 @@ import QtQuick 2.15
 
 Canvas {
     id: iconCanvas
-    property string iconType: "engine" 
+    property string iconType: "engine"
     property color iconColor: "#FF9F00"
     property bool active: false
     property real s: 1.0
+
+    // Cached gradient — created once per (size, color) pair, reused
+    // across paints to avoid JS allocation pressure that triggers V4 GC.
+    property var _bloomGradient: null
 
     width: 100 * s
     height: 100 * s
@@ -13,6 +17,9 @@ Canvas {
 
     onActiveChanged: requestPaint()
     onIconTypeChanged: requestPaint()
+    onIconColorChanged: { _bloomGradient = null; requestPaint() }
+    onSChanged: { _bloomGradient = null; requestPaint() }
+    onWidthChanged: { _bloomGradient = null }
 
     onPaint: {
         var ctx = getContext("2d");
@@ -22,26 +29,28 @@ Canvas {
         var h = height;
         var cx = w / 2;
         var cy = h / 2;
-        var col = active ? iconColor : "#151515";
+        var col = active ? iconColor : "#4a4d5c";  // dim but visible when inactive
 
-        // 1. Draw Background Bloom
+        // 1. Draw Background Bloom (only when active) — gradient cached
         if (active) {
-            var bloom = ctx.createRadialGradient(cx, cy, 0, cx, cy, w/2);
-            bloom.addColorStop(0, Qt.rgba(1, 1, 1, 0.15)); 
-            bloom.addColorStop(0.3, Qt.alpha(iconColor, 0.3));
-            bloom.addColorStop(1, "transparent");
-            ctx.fillStyle = bloom;
+            if (_bloomGradient === null) {
+                var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, w/2);
+                grad.addColorStop(0, Qt.rgba(1, 1, 1, 0.15));
+                grad.addColorStop(0.3, Qt.alpha(iconColor, 0.3));
+                grad.addColorStop(1, "transparent");
+                _bloomGradient = grad;
+            }
+            ctx.fillStyle = _bloomGradient;
             ctx.fillRect(0, 0, w, h);
         }
 
         ctx.save();
         ctx.translate(cx, cy);
-        
-        // 2. Apply Shadow Glow
-        if (active) {
-            ctx.shadowBlur = 15 * s;
-            ctx.shadowColor = col;
-        }
+
+        // (Shadow glow removed — ctx.shadowBlur is O(blur²) per pixel and
+        // caused multi-second event-loop stalls every ~10s. The radial-
+        // gradient bloom drawn above gives a similar visual effect at a
+        // tiny fraction of the cost.)
 
         ctx.strokeStyle = col;
         ctx.fillStyle = col;
@@ -117,7 +126,7 @@ Canvas {
             ctx.lineTo(972, 617);
             ctx.fill();
         } else if (iconType === "battery") {
-            var bs = 2.5;
+            var bs = 2.5 * s;
             ctx.scale(bs, bs);
             // Body
             ctx.strokeRect(-10, -3, 20, 12);
@@ -135,7 +144,7 @@ Canvas {
             ctx.stroke();
 
         } else if (iconType === "brake") {
-            var bks = 2.2;
+            var bks = 2.2 * s;
             ctx.scale(bks, bks);
             // Inner circle
             ctx.beginPath(); ctx.arc(0, 0, 8, 0, 2 * Math.PI); ctx.stroke();
@@ -151,7 +160,7 @@ Canvas {
             ctx.beginPath(); ctx.arc(0, 0, 11.5, 0.85, 2.3); ctx.stroke();
 
         } else if (iconType === "abs") {
-            var as2 = 2.2;
+            var as2 = 2.2 * s;
             ctx.scale(as2, as2);
             ctx.beginPath(); ctx.arc(0, 0, 12, 0, 2 * Math.PI); ctx.stroke();
             ctx.font = "bold 11px sans-serif";
@@ -160,7 +169,7 @@ Canvas {
             ctx.fillText("ABS", 0, 0.5);
 
         } else if (iconType === "airbag") {
-            var ais = 2.0;
+            var ais = 2.0 * s;
             ctx.scale(ais, ais);
             // Head
             ctx.beginPath(); ctx.arc(-5, -8, 3.5, 0, 2 * Math.PI); ctx.stroke();

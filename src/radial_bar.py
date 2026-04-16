@@ -56,10 +56,12 @@ class RadialBar(QQuickPaintedItem):
 
     # ── QPainter rendering ───────────────────────────────────────────
     def paint(self, painter: QPainter):
-        size = min(self.width(), self.height())
-        self.setWidth(size)
-        self.setHeight(size)
-        rect = QRectF(0, 0, size, size)
+        w = self.width()
+        h = self.height()
+        size = min(w, h)
+        x = (w - size) / 2.0
+        y = (h - size) / 2.0
+        rect = QRectF(x, y, size, size)
         painter.setRenderHint(QPainter.Antialiasing)
         pen = QPen()
         # QML sends penStyle as int; cast to the enum Qt expects.

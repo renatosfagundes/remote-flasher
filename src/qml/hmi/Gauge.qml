@@ -15,6 +15,10 @@ Item {
     property color accentColor: "#01E6DE"
     property real redZoneStart: 200
     property real s: 1.0                    // Scale factor
+    // Display formatting for the centre value (e.g. RPM 1023 with
+    // displayDivisor=1000, decimals=1 → "1.0").
+    property real displayDivisor: 1
+    property int  decimals: 0
 
     width: 400 * s
     height: 400 * s
@@ -35,12 +39,13 @@ Item {
         id: canvas
         anchors.fill: parent
         antialiasing: true
-        renderTarget: Canvas.FramebufferObject
+        renderTarget: Canvas.Image  // CPU-backed — avoids GPU sync stalls
 
         onPaint: {
             var ctx = getContext("2d");
             ctx.reset();
-            
+            if (width < 10 || height < 10) return;  // not yet laid out
+
             var centerX = width / 2;
             var centerY = height / 2;
             var radius = (Math.min(width, height) / 2) - (10 * s);
@@ -122,8 +127,9 @@ Item {
                 }
             }
 
-            // 5. Ticks and Labels
-            ctx.font = (16 * s) + "px sans-serif";
+            // 5. Ticks and Labels — font scales with gauge size, not global s
+            var tickFontPx = Math.max(9, Math.min(width, height) * 0.04);
+            ctx.font = tickFontPx + "px sans-serif";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
 
@@ -192,17 +198,20 @@ Item {
         }
     }
 
-    // Value Display Center
+    // Value Display Center — sizes scale with the *actual* gauge dimensions
+    // (not the global `s` factor) so a 70%-sized RPM gauge gets 70%-sized
+    // text instead of overflowing onto the tick labels.
+    readonly property real _dim: Math.min(width, height)
     Column {
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: 60 * s
-        spacing: -5 * s
-        
+        anchors.verticalCenterOffset: root._dim * 0.15
+        spacing: -root._dim * 0.01
+
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: Math.floor(root.value)
+            text: (root.value / root.displayDivisor).toFixed(root.decimals)
             color: (root.redZoneStart > 0 && root.value >= root.redZoneStart) ? "#ff2244" : "white"
-            font.pixelSize: 52 * s
+            font.pixelSize: root._dim * 0.10
             font.bold: true
             Behavior on color { ColorAnimation { duration: 300 } }
         }
@@ -210,8 +219,8 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.unitLabel.toUpperCase()
             color: root.accentColor
-            font.pixelSize: 14 * s
-            font.letterSpacing: 2 * s
+            font.pixelSize: root._dim * 0.028
+            font.letterSpacing: root._dim * 0.004
         }
     }
 }

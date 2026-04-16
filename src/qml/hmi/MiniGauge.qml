@@ -136,7 +136,9 @@ Item {
     }
 
     function getPoint(angle, offset) {
-        var rx = _pivotX + Math.cos(angle) * (_radius + (isLeft ? -offset : offset));
+        // Always pull `offset` px toward the pivot (inside the arc) so text
+        // sits inside the element bounds regardless of left/right orientation.
+        var rx = _pivotX + Math.cos(angle) * (_radius - offset);
         var ry = _pivotY + Math.sin(angle) * _radius;
         return { "x": rx, "y": ry };
     }

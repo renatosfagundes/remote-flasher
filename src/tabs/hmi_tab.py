@@ -72,6 +72,29 @@ class _HMIBridge(QObject):
     doorRRChanged = Signal()
     trunkChanged = Signal()
     hoodChanged = Signal()
+    # Warning lights
+    checkEngineChanged = Signal()
+    oilPressureChanged = Signal()
+    batteryWarnChanged = Signal()
+    brakeWarnChanged = Signal()
+    absWarnChanged = Signal()
+    airbagWarnChanged = Signal()
+    serviceDueChanged = Signal()
+    tirePressureChanged = Signal()
+    doorOpenChanged = Signal()
+    tractionControlChanged = Signal()
+    # Status lights
+    parkingLightsChanged = Signal()
+    lowBeamChanged = Signal()
+    highBeamChanged = Signal()
+    fogLightsChanged = Signal()
+    seatbeltUnbuckledChanged = Signal()
+    cruiseActiveChanged = Signal()
+    ecoModeChanged = Signal()
+    evChargingChanged = Signal()
+    # Turn signals
+    turnLeftChanged = Signal()
+    turnRightChanged = Signal()
     # Mode
     vehicleModeChanged = Signal()
 
@@ -97,6 +120,29 @@ class _HMIBridge(QObject):
         self._doorRR = False
         self._trunk = False
         self._hood = False
+        # Warning lights
+        self._checkEngine = False
+        self._oilPressure = False
+        self._batteryWarn = False
+        self._brakeWarn = False
+        self._absWarn = False
+        self._airbagWarn = False
+        self._serviceDue = False
+        self._tirePressure = False
+        self._doorOpen = False
+        self._tractionControl = False
+        # Status lights
+        self._parkingLights = False
+        self._lowBeam = False
+        self._highBeam = False
+        self._fogLights = False
+        self._seatbeltUnbuckled = False
+        self._cruiseActive = False
+        self._ecoMode = False
+        self._evCharging = False
+        # Turn signals
+        self._turnLeft = False
+        self._turnRight = False
         # Mode (0=Electric, 1=CombustionAuto, 2=CombustionManual)
         self._vehicleMode = int(load_settings().get("vehicle_mode", 1))
 
@@ -145,6 +191,52 @@ class _HMIBridge(QObject):
     trunk = Property(bool, _gs_trk[0], _gs_trk[1], notify=trunkChanged)
     _gs_hd = _make_bool_prop("hood")
     hood = Property(bool, _gs_hd[0], _gs_hd[1], notify=hoodChanged)
+
+    # ── Warning lights ─────────────────────────────────────────────
+    _gs_ce = _make_bool_prop("checkEngine")
+    checkEngine = Property(bool, _gs_ce[0], _gs_ce[1], notify=checkEngineChanged)
+    _gs_op = _make_bool_prop("oilPressure")
+    oilPressure = Property(bool, _gs_op[0], _gs_op[1], notify=oilPressureChanged)
+    _gs_bw = _make_bool_prop("batteryWarn")
+    batteryWarn = Property(bool, _gs_bw[0], _gs_bw[1], notify=batteryWarnChanged)
+    _gs_brw = _make_bool_prop("brakeWarn")
+    brakeWarn = Property(bool, _gs_brw[0], _gs_brw[1], notify=brakeWarnChanged)
+    _gs_aw = _make_bool_prop("absWarn")
+    absWarn = Property(bool, _gs_aw[0], _gs_aw[1], notify=absWarnChanged)
+    _gs_abw = _make_bool_prop("airbagWarn")
+    airbagWarn = Property(bool, _gs_abw[0], _gs_abw[1], notify=airbagWarnChanged)
+    _gs_sd = _make_bool_prop("serviceDue")
+    serviceDue = Property(bool, _gs_sd[0], _gs_sd[1], notify=serviceDueChanged)
+    _gs_tp = _make_bool_prop("tirePressure")
+    tirePressure = Property(bool, _gs_tp[0], _gs_tp[1], notify=tirePressureChanged)
+    _gs_do = _make_bool_prop("doorOpen")
+    doorOpen = Property(bool, _gs_do[0], _gs_do[1], notify=doorOpenChanged)
+    _gs_tc = _make_bool_prop("tractionControl")
+    tractionControl = Property(bool, _gs_tc[0], _gs_tc[1], notify=tractionControlChanged)
+
+    # ── Status lights ──────────────────────────────────────────────
+    _gs_pl = _make_bool_prop("parkingLights")
+    parkingLights = Property(bool, _gs_pl[0], _gs_pl[1], notify=parkingLightsChanged)
+    _gs_lb = _make_bool_prop("lowBeam")
+    lowBeam = Property(bool, _gs_lb[0], _gs_lb[1], notify=lowBeamChanged)
+    _gs_hb = _make_bool_prop("highBeam")
+    highBeam = Property(bool, _gs_hb[0], _gs_hb[1], notify=highBeamChanged)
+    _gs_fg = _make_bool_prop("fogLights")
+    fogLights = Property(bool, _gs_fg[0], _gs_fg[1], notify=fogLightsChanged)
+    _gs_sb = _make_bool_prop("seatbeltUnbuckled")
+    seatbeltUnbuckled = Property(bool, _gs_sb[0], _gs_sb[1], notify=seatbeltUnbuckledChanged)
+    _gs_ca = _make_bool_prop("cruiseActive")
+    cruiseActive = Property(bool, _gs_ca[0], _gs_ca[1], notify=cruiseActiveChanged)
+    _gs_em = _make_bool_prop("ecoMode")
+    ecoMode = Property(bool, _gs_em[0], _gs_em[1], notify=ecoModeChanged)
+    _gs_ec = _make_bool_prop("evCharging")
+    evCharging = Property(bool, _gs_ec[0], _gs_ec[1], notify=evChargingChanged)
+
+    # ── Turn signals ───────────────────────────────────────────────
+    _gs_tl = _make_bool_prop("turnLeft")
+    turnLeft = Property(bool, _gs_tl[0], _gs_tl[1], notify=turnLeftChanged)
+    _gs_tr = _make_bool_prop("turnRight")
+    turnRight = Property(bool, _gs_tr[0], _gs_tr[1], notify=turnRightChanged)
 
     # ── Gear (int) ─────────────────────────────────────────────────
     def _get_gear(self):
@@ -195,6 +287,30 @@ _DOOR_CHANNEL_MAP = {
     "doorRR": 11,
     "trunk": 12,
     "hood": 13,
+}
+
+# Warning + status channels (bool: >= 1.0 means active)
+_BOOL_CHANNEL_MAP = {
+    "checkEngine": 14,
+    "oilPressure": 15,
+    "batteryWarn": 16,
+    "brakeWarn": 17,
+    "absWarn": 18,
+    "airbagWarn": 19,
+    "parkingLights": 20,
+    "lowBeam": 21,
+    "highBeam": 22,
+    "fogLights": 23,
+    "seatbeltUnbuckled": 24,
+    "turnLeft": 25,
+    "turnRight": 26,
+    "cruiseActive": 27,
+    "serviceDue": 28,
+    "tirePressure": 29,
+    "doorOpen": 30,
+    "tractionControl": 31,
+    "ecoMode": 32,
+    "evCharging": 33,
 }
 
 # Register the RadialBar QML type once
@@ -264,5 +380,9 @@ class HMIDashboardTab(QWidget):
             self._bridge._set_gear(int(vals[_GEAR_CHANNEL]))
         # Doors (bool: >=1 means open)
         for name, ch in _DOOR_CHANNEL_MAP.items():
+            if ch < len(vals):
+                setattr(self._bridge, name, float(vals[ch]) >= 1.0)
+        # Warning + status lights (bool: >=1 means active)
+        for name, ch in _BOOL_CHANNEL_MAP.items():
             if ch < len(vals):
                 setattr(self._bridge, name, float(vals[ch]) >= 1.0)

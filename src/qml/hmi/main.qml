@@ -50,18 +50,6 @@ Rectangle {
         height: Math.max(50, 70 * root.s)
         color: "#080810"
 
-        // Door status (left)
-        DoorStatus {
-            s: root.s * 0.35
-            anchors { verticalCenter: parent.verticalCenter; left: parent.left; leftMargin: 15 * root.s }
-            doorFL: dashboard ? dashboard.doorFL : false
-            doorFR: dashboard ? dashboard.doorFR : false
-            doorRL: dashboard ? dashboard.doorRL : false
-            doorRR: dashboard ? dashboard.doorRR : false
-            trunk:  dashboard ? dashboard.trunk  : false
-            hood:   dashboard ? dashboard.hood   : false
-        }
-
         // Speed readout (centre)
         Text {
             anchors.centerIn: parent
