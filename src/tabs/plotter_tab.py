@@ -37,19 +37,23 @@ class PlotterTab(QWidget):
         for label, secs in [("5s", 5), ("10s", 10), ("30s", 30), ("60s", 60), ("120s", 120)]:
             self.window_combo.addItem(label, userData=secs)
         self.window_combo.setCurrentIndex(1)  # 10s default
+        self.window_combo.setToolTip("Visible time window on the X axis.")
         self.window_combo.currentIndexChanged.connect(self._on_window)
         toolbar.addWidget(self.window_combo)
 
         self.pause_btn = QPushButton("Pause")
         self.pause_btn.setCheckable(True)
+        self.pause_btn.setToolTip("Freeze the plot; incoming data is still buffered.")
         self.pause_btn.toggled.connect(self._on_pause)
         toolbar.addWidget(self.pause_btn)
 
         self.export_btn = QPushButton("Export CSV")
+        self.export_btn.setToolTip("Save the full buffered history to a CSV file.")
         self.export_btn.clicked.connect(self._on_export)
         toolbar.addWidget(self.export_btn)
 
         self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setToolTip("Discard all buffered samples and reset the signal list.")
         self.clear_btn.clicked.connect(self._on_clear)
         toolbar.addWidget(self.clear_btn)
 

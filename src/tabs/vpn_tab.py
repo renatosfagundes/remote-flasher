@@ -3,7 +3,7 @@ import subprocess
 import threading
 
 import paramiko
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QGroupBox, QLabel, QPushButton, QLineEdit, QCheckBox, QMessageBox,
@@ -34,22 +34,32 @@ class VPNTab(QWidget):
 
         g.addWidget(QLabel("Connection Name:"), 0, 0)
         self.vpn_name = QLineEdit(self.DEFAULT_VPN_NAME)
+        self.vpn_name.setToolTip(
+            "Name of the Windows VPN profile. Change only if you need to\n"
+            "connect to a non-default CIN VPN setup."
+        )
         g.addWidget(self.vpn_name, 0, 1, 1, 2)
 
         g.addWidget(QLabel("Server Address:"), 1, 0)
         self.vpn_address = QLineEdit(self.DEFAULT_VPN_ADDRESS)
         self.vpn_address.setReadOnly(True)
+        self.vpn_address.setToolTip("CIN VPN server hostname (read-only).")
         g.addWidget(self.vpn_address, 1, 1, 1, 2)
 
         g.addWidget(QLabel("Username:"), 2, 0)
         self.vpn_user = QLineEdit()
         self.vpn_user.setPlaceholderText("Your CIN username")
+        self.vpn_user.setToolTip("Your CIN account username (same as webmail/SIGAA login).")
         g.addWidget(self.vpn_user, 2, 1, 1, 2)
 
         g.addWidget(QLabel("Password:"), 3, 0)
         self.vpn_pass = QLineEdit()
         self.vpn_pass.setEchoMode(QLineEdit.Password)
         self.vpn_pass.setPlaceholderText("Your CIN password")
+        self.vpn_pass.setToolTip(
+            "Your CIN account password.\n"
+            "Check 'Remember me' to store it locally (not shared with source code)."
+        )
         g.addWidget(self.vpn_pass, 3, 1, 1, 2)
 
         self.remember_cb = QCheckBox("Remember me")
@@ -71,10 +81,12 @@ class VPNTab(QWidget):
         btn_row.addStretch()
 
         self.connect_btn = QPushButton("Connect VPN")
+        self.connect_btn.setToolTip("Dial the VPN with the credentials above (or hang up if connected).")
         self.connect_btn.clicked.connect(self._toggle_vpn)
         btn_row.addWidget(self.connect_btn)
 
         self.test_btn = QPushButton("Test Connection")
+        self.test_btn.setToolTip("Ping PC 217 to confirm the lab network is reachable through the VPN.")
         self.test_btn.clicked.connect(self._test_connection)
         btn_row.addWidget(self.test_btn)
 
@@ -194,6 +206,13 @@ class VPNTab(QWidget):
         vpn_name = self.vpn_name.text().strip()
         threading.Thread(target=self._check_vpn_on_startup, args=(vpn_name,), daemon=True).start()
 
+        # Periodic poll to catch external disconnects (e.g. another instance of
+        # the app tore down the VPN). Only fires when we think we're connected,
+        # so it can't fight the user's own connect/disconnect flow.
+        self._vpn_poll_timer = QTimer(self)
+        self._vpn_poll_timer.timeout.connect(self._poll_vpn_status)
+        self._vpn_poll_timer.start(30_000)
+
     def _check_vpn_on_startup(self, vpn_name):
         """Check if the VPN is already connected by listing active rasdial connections."""
         try:
@@ -208,6 +227,33 @@ class VPNTab(QWidget):
                 self._log_signal.emit(f"[VPN] Already connected to '{vpn_name}'")
         except Exception:
             pass  # silently ignore — not critical
+
+    def _poll_vpn_status(self):
+        """Background check: detect external disconnects only. Skip if we think
+        we're disconnected — avoids racing with the user's own connect flow.
+        """
+        if not self._connected:
+            return
+        vpn_name = self.vpn_name.text().strip()
+        if not vpn_name:
+            return
+        threading.Thread(target=self._do_poll_vpn, args=(vpn_name,), daemon=True).start()
+
+    def _do_poll_vpn(self, vpn_name):
+        try:
+            result = subprocess.run(
+                ["rasdial"], capture_output=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            output = result.stdout.decode("cp850", errors="replace")
+            if vpn_name.lower() not in output.lower():
+                self._log_signal.emit(
+                    f"[VPN] '{vpn_name}' is no longer active — likely disconnected "
+                    "by another app instance."
+                )
+                self._status_signal.emit("disconnected", "Disconnected", False)
+        except Exception:
+            pass
 
     def _on_remember_toggled(self, checked):
         if checked:

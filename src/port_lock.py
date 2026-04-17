@@ -24,7 +24,10 @@ from settings import load_settings
 log = logging.getLogger(__name__)
 
 LOCK_DIR = r"C:\2026\locks"
-STALE_SECONDS = 12 * 60  # 12 minutes (idle timeout 10 min + 2 min grace)
+STALE_SECONDS = 150  # 2.5 min — heartbeat is 60s, so this tolerates one missed
+                     # refresh (age ~120s) with 30s grace before another user can
+                     # steal the lock. Short enough that a crashed flash op frees
+                     # the port quickly; long enough to survive a network blip.
 HEARTBEAT_SECONDS = 60
 POLL_INTERVAL_MS = 60_000  # 60 seconds (was 15s — too aggressive, hammered SSHD)
 

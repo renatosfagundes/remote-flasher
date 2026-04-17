@@ -64,11 +64,13 @@ def _load_config():
 class InfoCardWidget(QFrame):
     """Flat info card showing label + value + units."""
 
-    def __init__(self, label="", units="", color="#00e5ff", parent=None):
+    def __init__(self, label="", units="", color="#00e5ff", tooltip="", parent=None):
         super().__init__(parent)
         self.setStyleSheet(
             "InfoCardWidget { background: #0c0c20; border: 1px solid #1a3050; border-radius: 6px; }"
         )
+        if tooltip:
+            self.setToolTip(tooltip)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(1)
@@ -99,10 +101,12 @@ class InfoCardWidget(QFrame):
 class StatusLightWidget(QFrame):
     """Small indicator light with label."""
 
-    def __init__(self, label="", color="#2ecc71", parent=None):
+    def __init__(self, label="", color="#2ecc71", tooltip="", parent=None):
         super().__init__(parent)
         self._on_color = color
         self.setStyleSheet("StatusLightWidget { border: none; }")
+        if tooltip:
+            self.setToolTip(tooltip)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
@@ -164,12 +168,17 @@ class GaugesTab(QWidget):
         ctrl.addWidget(lbl)
         self.source_combo = QComboBox()
         self.source_combo.addItem("(none)", userData=-1)
+        self.source_combo.setToolTip(
+            "Pick a serial panel to feed this dashboard.\n"
+            "Enable 'Feed Dashboard' on a panel in the Serial tab first."
+        )
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
         self.source_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         ctrl.addWidget(self.source_combo)
         ctrl.addStretch()
         self.log_btn = QPushButton("Start Log")
         self.log_btn.setCheckable(True)
+        self.log_btn.setToolTip("Record the streaming channel values to a CSV file.")
         self.log_btn.toggled.connect(self._on_log_toggled)
         ctrl.addWidget(self.log_btn)
         layout.addLayout(ctrl)
@@ -188,6 +197,11 @@ class GaugesTab(QWidget):
             g.units = gcfg.get("units", "")
             g.setScalaCount(gcfg.get("scalaCount", 10))
             g.setMouseTracking(False)
+            g.setToolTip(
+                f"{gcfg.get('label', 'Gauge')}\n"
+                f"Channel: {gcfg.get('channel', i)}\n"
+                f"Range: {gcfg.get('min', 0)}–{gcfg.get('max', 100)}{gcfg.get('units', '')}"
+            )
 
             # Dark theme — dark face, colored arc only at the value
             g.set_scale_polygon_colors([
@@ -244,6 +258,11 @@ class GaugesTab(QWidget):
             light = StatusLightWidget(
                 label=lcfg.get("label", ""),
                 color=lcfg.get("color", "#2ecc71"),
+                tooltip=(
+                    f"{lcfg.get('label', 'Light')}\n"
+                    f"Channel: {lcfg.get('channel', 0)}\n"
+                    f"Lights up when value ≥ {lcfg.get('threshold', 1)}"
+                ),
             )
             self._lights.append((light, lcfg))
             lights_row.addWidget(light)
@@ -254,10 +273,16 @@ class GaugesTab(QWidget):
         cards_row.setSpacing(6)
         self._cards: list[tuple[InfoCardWidget, dict]] = []
         for ccfg in self._cfg.get("infoCards", []):
+            units = ccfg.get("units", "")
             card = InfoCardWidget(
                 label=ccfg.get("label", ""),
-                units=ccfg.get("units", ""),
+                units=units,
                 color=ccfg.get("color", "#00e5ff"),
+                tooltip=(
+                    f"{ccfg.get('label', 'Card')}\n"
+                    f"Channel: {ccfg.get('channel', 0)}"
+                    + (f"\nUnits: {units}" if units else "")
+                ),
             )
             self._cards.append((card, ccfg))
             cards_row.addWidget(card)

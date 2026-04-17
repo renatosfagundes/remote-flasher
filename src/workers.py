@@ -351,6 +351,56 @@ class PortsFetchWorker(QThread):
                     pass
 
 
+class LockAcquireWorker(QThread):
+    """Acquire cross-instance COM-port locks on a remote PC via SFTP.
+
+    Atomic-ish: if any port can't be acquired, releases the ones we got and
+    reports the conflicts so the caller can show the user who holds them.
+    """
+    output = Signal(str)
+    # (all_acquired, conflicts) — conflicts is [(port, owner_description)]
+    finished_signal = Signal(bool, list)
+
+    def __init__(self, pc_info, ports, parent=None):
+        super().__init__(parent)
+        self.pc_info = pc_info
+        self.ports = [p for p in ports if p]
+
+    def run(self):
+        from port_lock import acquire_lock, release_lock
+        acquired = []
+        conflicts = []
+        for port in self.ports:
+            ok, owner = acquire_lock(self.pc_info, port)
+            if ok:
+                acquired.append(port)
+            else:
+                conflicts.append((port, owner))
+                break  # no point trying the rest
+        if conflicts:
+            for port in acquired:
+                release_lock(self.pc_info, port)
+            self.finished_signal.emit(False, conflicts)
+        else:
+            self.finished_signal.emit(True, [])
+
+
+class LockReleaseWorker(QThread):
+    """Fire-and-forget release of cross-instance COM-port locks."""
+    finished_signal = Signal()
+
+    def __init__(self, pc_info, ports, parent=None):
+        super().__init__(parent)
+        self.pc_info = pc_info
+        self.ports = [p for p in ports if p]
+
+    def run(self):
+        from port_lock import release_lock
+        for port in self.ports:
+            release_lock(self.pc_info, port)
+        self.finished_signal.emit()
+
+
 class CameraWorker(QThread):
     """Fetch MJPEG frames from a camera URL."""
     frame_ready = Signal(QImage)

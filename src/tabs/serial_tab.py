@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from lab_config import COMPUTERS, SERIAL_DEFAULTS
 from port_lock import acquire_lock, release_lock, refresh_lock
 from settings import get_remote_user_dir
-from widgets import LogWidget
+from widgets import LogWidget, ToggleSwitch
 from workers import SerialWorker, SCPWorker
 
 
@@ -299,21 +299,31 @@ class SerialPanel(QFrame):
         g.addWidget(QLabel("Computer:"), 0, 0)
         self.pc_combo = QComboBox()
         self.pc_combo.addItems(COMPUTERS.keys())
+        self.pc_combo.setToolTip("Lab PC to open the serial session on.")
         self.pc_combo.currentTextChanged.connect(self._on_pc_changed)
         g.addWidget(self.pc_combo, 0, 1)
 
         g.addWidget(QLabel("Remote Folder:"), 0, 2)
         self.remote_dir = QLineEdit(get_remote_user_dir())
         self.remote_dir.setPlaceholderText("Your folder on the remote PC")
+        self.remote_dir.setToolTip(
+            "Working folder on the remote PC for serialterm.py.\n"
+            "Typically C:\\2026\\<your-username>."
+        )
         g.addWidget(self.remote_dir, 0, 3, 1, 3)
 
         g.addWidget(QLabel("Board:"), 1, 0)
         self.board_combo = QComboBox()
+        self.board_combo.setToolTip("Board on the selected PC. Filters the COM port list below.")
         self.board_combo.currentTextChanged.connect(self._on_board_changed)
         g.addWidget(self.board_combo, 1, 1)
 
         g.addWidget(QLabel("COM Port:"), 1, 2)
         self.port_combo = QComboBox()
+        self.port_combo.setToolTip(
+            "COM port on the remote PC to open.\n"
+            "Must not be in use by avrdude or another panel."
+        )
         g.addWidget(self.port_combo, 1, 3)
 
         g.addWidget(QLabel("Baudrate:"), 1, 4)
@@ -321,14 +331,16 @@ class SerialPanel(QFrame):
         self.baudrate.setEditable(True)
         self.baudrate.addItems(["9600", "19200", "38400", "57600", "115200"])
         self.baudrate.setCurrentText(SERIAL_DEFAULTS["baudrate"])
+        self.baudrate.setToolTip("Serial baudrate. Type a custom value if not listed.")
         g.addWidget(self.baudrate, 1, 5)
 
         btn_row = QHBoxLayout()
         self.connect_btn = QPushButton("Open Serial")
+        self.connect_btn.setToolTip("Open / close the serial session over SSH.")
         self.connect_btn.clicked.connect(self._toggle_serial)
         btn_row.addWidget(self.connect_btn)
 
-        self.feed_cb = QCheckBox("Feed Dashboard")
+        self.feed_cb = ToggleSwitch("Feed Dashboard")
         self.feed_cb.setToolTip("Route this serial data to the Dashboard and Plotter tabs")
         self.feed_cb.setEnabled(False)  # enabled when connected
         self.feed_cb.toggled.connect(self._on_feed_toggled)

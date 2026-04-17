@@ -39,13 +39,41 @@ class PlotterWidget(QWidget):
         self._plot_widget.setMouseEnabled(x=True, y=True)
         layout.addWidget(self._plot_widget)
 
+        plot_item = self._plot_widget.getPlotItem()
+        # Ticks + values on all four sides.
+        for side in ("top", "right"):
+            plot_item.showAxis(side)
+            plot_item.getAxis(side).setStyle(showValues=True)
+
+        # Legend — auto-populated from each curve's `name`. Semi-transparent
+        # background so it doesn't hide data.
+        self._legend = plot_item.addLegend(
+            offset=(-10, 10),
+            brush=pg.mkBrush("#00000099"),
+            pen=pg.mkPen("#555"),
+            labelTextColor="#dddddd",
+        )
+
         # Crosshair for hover
-        self._vline = pg.InfiniteLine(angle=90, pen=pg.mkPen("#ffffff", width=0.5, style=pg.QtCore.Qt.DashLine))
+        self._vline = pg.InfiniteLine(
+            angle=90,
+            pen=pg.mkPen("#ffffff", width=0.5, style=pg.QtCore.Qt.DashLine),
+        )
         self._plot_widget.addItem(self._vline, ignoreBounds=True)
         self._vline.setVisible(False)
 
-        # Hover label
-        self._hover_label = pg.TextItem(anchor=(0, 1), color="#cccccc")
+        # Dots marking the (hover_x, y_i) intersection for each visible curve.
+        self._hover_dots = pg.ScatterPlotItem(size=9, pen=pg.mkPen("#ffffff", width=1.5))
+        self._hover_dots.setVisible(False)
+        self._plot_widget.addItem(self._hover_dots, ignoreBounds=True)
+
+        # Hover label — dark background box so numbers stay legible over curves.
+        self._hover_label = pg.TextItem(
+            anchor=(0, 1),
+            color="#ffffff",
+            fill=pg.mkBrush("#000000cc"),
+            border=pg.mkPen("#888"),
+        )
         self._hover_label.setVisible(False)
         self._plot_widget.addItem(self._hover_label, ignoreBounds=True)
 
@@ -86,7 +114,7 @@ class PlotterWidget(QWidget):
             self._plot_widget.removeItem(self._curves.pop(i))
 
     def update_curve_style(self, index: int):
-        """Update a curve's pen color and visibility from its config."""
+        """Update a curve's pen color, visibility, and legend entry from config."""
         if index not in self._curves:
             return
         configs = self._backend.configs
@@ -96,6 +124,15 @@ class PlotterWidget(QWidget):
         curve = self._curves[index]
         curve.setPen(pg.mkPen(cfg.color, width=2))
         curve.setVisible(cfg.visible)
+        # Rebuild this curve's legend entry — pyqtgraph's LegendItem doesn't
+        # track name/visibility changes on its own.
+        try:
+            self._legend.removeItem(curve)
+        except Exception:
+            pass
+        if cfg.visible:
+            self._legend.addItem(curve, cfg.name)
+        curve.opts["name"] = cfg.name
 
     def _refresh(self):
         """Called at 30 fps — update curve data and scroll X axis."""
@@ -150,10 +187,11 @@ class PlotterWidget(QWidget):
         self._plot_widget.setXRange(t_min, latest_t, padding=0)
 
     def _on_mouse_moved(self, pos):
-        """Show crosshair + value tooltip on hover."""
+        """Show crosshair + per-curve dot + value tooltip on hover."""
         if not self._plot_widget.sceneBoundingRect().contains(pos):
             self._vline.setVisible(False)
             self._hover_label.setVisible(False)
+            self._hover_dots.setVisible(False)
             return
 
         mouse_point = self._plot_widget.plotItem.vb.mapSceneToView(pos)
@@ -161,29 +199,34 @@ class PlotterWidget(QWidget):
         self._vline.setPos(x)
         self._vline.setVisible(True)
 
-        # Build tooltip with nearest values for each visible channel
         configs = self._backend.configs
-        lines = [f"t = {x:.2f}s"]
-
-        t_buf = self._backend.time_buffer()
-        t_all = t_buf.get_array()
+        t_all = self._backend.time_buffer().get_array()
         if len(t_all) == 0:
             self._hover_label.setVisible(False)
+            self._hover_dots.setVisible(False)
             return
 
-        # Find nearest time index
-        idx = np.searchsorted(t_all, x)
-        idx = min(idx, len(t_all) - 1)
+        # Nearest-sample index for the hover x.
+        idx = min(np.searchsorted(t_all, x), len(t_all) - 1)
+        x_snap = float(t_all[idx])
 
+        dot_spots = []
+        lines = [f"t = {x_snap:.2f}s"]
         for i in range(self._backend.channel_count):
             if i >= len(configs) or not configs[i].visible:
                 continue
             ch = self._backend.channel_buffer(i).get_array()
-            if idx < len(ch):
-                raw = ch[idx]
-                scaled = raw * configs[i].scale + configs[i].offset
-                lines.append(f"{configs[i].name}: {scaled:.3f}")
+            if idx >= len(ch):
+                continue
+            scaled = float(ch[idx]) * configs[i].scale + configs[i].offset
+            lines.append(f"{configs[i].name}: {scaled:.3f}")
+            dot_spots.append({
+                "pos": (x_snap, scaled),
+                "brush": pg.mkBrush(configs[i].color),
+            })
 
+        self._hover_dots.setData(dot_spots)
+        self._hover_dots.setVisible(bool(dot_spots))
         self._hover_label.setText("\n".join(lines))
         self._hover_label.setPos(mouse_point)
         self._hover_label.setVisible(True)

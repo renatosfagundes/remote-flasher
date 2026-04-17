@@ -77,6 +77,7 @@ class PlotPanel(QFrame):
         self.window_spin.setSingleStep(100)
         self.window_spin.setSuffix(" pts")
         self.window_spin.setFixedWidth(100)
+        self.window_spin.setToolTip("Number of most-recent samples visible on the X axis.")
         header.addWidget(self.window_spin)
 
         # Close button — matches Serial tab style
@@ -255,6 +256,10 @@ class PlotsTab(QWidget):
         ctrl.addWidget(QLabel("Serial source:"))
         self.source_combo = QComboBox()
         self.source_combo.addItem("(none)", userData=-1)
+        self.source_combo.setToolTip(
+            "Pick a serial panel to feed these plots.\n"
+            "Enable 'Feed Dashboard' on a panel in the Serial tab first."
+        )
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
         self.source_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         ctrl.addWidget(self.source_combo)
@@ -263,10 +268,12 @@ class PlotsTab(QWidget):
 
         self.log_btn = QPushButton("Start Log")
         self.log_btn.setCheckable(True)
+        self.log_btn.setToolTip("Record the streaming channel values to a CSV file.")
         self.log_btn.toggled.connect(self._on_log_toggled)
         ctrl.addWidget(self.log_btn)
 
         self.add_btn = QPushButton("+ Add Plot")
+        self.add_btn.setToolTip(f"Add a new plot panel (up to {MAX_PANELS}).")
         self.add_btn.clicked.connect(self._add_panel)
         self.add_btn.setStyleSheet(
             "QPushButton { background: #27ae60; }"

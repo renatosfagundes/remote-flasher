@@ -170,6 +170,7 @@ class CANTab(QWidget):
         pc_row.addWidget(QLabel("Computer:"))
         self.pc_combo = QComboBox()
         self.pc_combo.addItems(COMPUTERS.keys())
+        self.pc_combo.setToolTip("Lab PC whose boards you want to configure.")
         self.pc_combo.currentTextChanged.connect(self._on_pc_changed)
         pc_row.addWidget(self.pc_combo, stretch=1)
         pc_row.addStretch(2)
@@ -179,6 +180,10 @@ class CANTab(QWidget):
         topo_grp = QGroupBox("CAN Bus Topology")
         topo_layout = QVBoxLayout(topo_grp)
         self.topology = BusTopologyWidget()
+        self.topology.setToolTip(
+            "Live diagram: each Placa shown on the bus it's connected to.\n"
+            "Greyed-out boards have no CAN selector (can't be switched remotely)."
+        )
         topo_layout.addWidget(self.topology)
         layout.addWidget(topo_grp, stretch=1)
 
@@ -209,7 +214,9 @@ class CANTab(QWidget):
             sel_layout.addWidget(name_label, row, 0)
 
             rb1 = QRadioButton()
+            rb1.setToolTip(f"Put {board_name} on CAN bus 1 (green).")
             rb2 = QRadioButton()
+            rb2.setToolTip(f"Put {board_name} on CAN bus 2 (orange).")
             rb1.setChecked(True)
 
             group = QButtonGroup(self)
@@ -229,11 +236,16 @@ class CANTab(QWidget):
             na_label.setStyleSheet("color: #666; font-style: italic;")
             na_label.setAlignment(Qt.AlignCenter)
             na_label.setVisible(False)
+            na_label.setToolTip(
+                "This board has no remote-controllable CAN selector — its bus\n"
+                "must be set by physically moving a jumper on the hardware."
+            )
             sel_layout.addWidget(na_label, row, 1, 1, 2, alignment=Qt.AlignCenter)
             self._na_labels[board_name] = na_label
 
             port_label = QLabel("—")
             port_label.setStyleSheet("color: #888;")
+            port_label.setToolTip("COM port used to drive this board's CAN selector.")
             self._port_labels[board_name] = port_label
             sel_layout.addWidget(port_label, row, 3)
 
@@ -241,11 +253,17 @@ class CANTab(QWidget):
             status_label.setStyleSheet("color: #666; font-weight: bold; font-size: 14px;")
             status_label.setFixedWidth(24)
             status_label.setAlignment(Qt.AlignCenter)
+            status_label.setToolTip(
+                "Last apply/detect result: ✓ OK, ! no response, ✗ error, ? unknown."
+            )
             self._status_labels[board_name] = status_label
             sel_layout.addWidget(status_label, row, 4, alignment=Qt.AlignCenter)
 
             apply_btn = QPushButton("Apply")
             apply_btn.setFixedWidth(70)
+            apply_btn.setToolTip(
+                f"Send the 'AT C<n>' command to switch {board_name} to the selected CAN bus."
+            )
             apply_btn.clicked.connect(
                 lambda checked, bn=board_name: self._apply_single(bn)
             )
@@ -268,6 +286,7 @@ class CANTab(QWidget):
         ]
         for label, config in presets:
             btn = QPushButton(label)
+            btn.setToolTip(f"Apply preset to all boards at once: {label}.")
             btn.clicked.connect(
                 lambda checked, c=config: self._apply_preset(c)
             )
@@ -276,6 +295,10 @@ class CANTab(QWidget):
         preset_layout.addSpacing(20)
         detect_btn = QPushButton("Detect Boards")
         detect_btn.setStyleSheet("font-weight: bold;")
+        detect_btn.setToolTip(
+            "Query every board's CAN selector (AT BI / FV / BV) to see\n"
+            "which bus it's on and whether the controller is alive."
+        )
         detect_btn.clicked.connect(self._query_all)
         preset_layout.addWidget(detect_btn)
 

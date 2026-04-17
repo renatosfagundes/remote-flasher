@@ -415,6 +415,7 @@ class SetupTab(QWidget):
 
         btn_row = QHBoxLayout()
         self.check_btn = QPushButton("Check Environment")
+        self.check_btn.setToolTip("Re-run the component checks above (green = present, red = missing).")
         self.check_btn.clicked.connect(self._run_check)
         btn_row.addWidget(self.check_btn)
 
