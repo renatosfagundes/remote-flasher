@@ -988,11 +988,22 @@ A pasta \texttt{examples/} do repositório contém projetos prontos para compila
   06 & \texttt{virtualio\_demo} & Botões, potenciômetros e LEDs virtuais (VirtualIO) \\
   07 & \texttt{can\_signals} & Codificação de sinais, resolução, offset, contador de sequência \\
   08 & \texttt{board\_io} & Leitura de pinos físicos com Board.h (botões, pots, LEDs) \\
+  \midrule
+  09 & \texttt{dashboard\_basic} & Envio de velocidade e RPM ao Dashboard (DashboardSignals) \\
+  10 & \texttt{dashboard\_gauges} & Todos os gauges: velocidade, RPM, temperatura, combustível, bateria, marcha \\
+  11 & \texttt{dashboard\_warnings} & Luzes de aviso, indicadores de status, setas \\
+  12 & \texttt{dashboard\_doors} & Portas interativas via VirtualIO + Dashboard \\
+  13 & \texttt{dashboard\_full} & Simulação completa de veículo (3 tasks em diferentes taxas) \\
   \bottomrule
 \end{tabularx}
 \end{center}
 
-Cada exemplo contém arquivos \texttt{.oil} e \texttt{.cpp} prontos. Copie \texttt{Board.h} para projetos que usam pinos físicos ou CAN, e \texttt{VirtualIO.h/cpp} para projetos que usam os controles virtuais.
+\textbf{Bibliotecas necessárias:} Copie os arquivos \texttt{.h/.cpp} da pasta \texttt{arduino\_lib/} para o diretório do exemplo:
+\begin{itemize}[nosep]
+  \item \textbf{VirtualIO}: \texttt{VirtualIO.h}, \texttt{VirtualIO.cpp} (ex.~06, 12)
+  \item \textbf{DashboardSignals}: \texttt{DashboardSignals.h}, \texttt{DashboardSignals.cpp} (ex.~09--13)
+\end{itemize}
+Adicione cada \texttt{.cpp} como \texttt{APP\_SRC} no arquivo \texttt{.oil}.
 
 % === 16. Exemplo Prático: LED com Alarme ==========================
 \section{Exemplo Prático: LED Controlado por Alarme}
@@ -1556,5 +1567,223 @@ O executável precisa de um Python instalado no sistema para executar o script d
 
 \subsection{Setup: download falha com erro SSL}
 Alguns servidores universitários têm certificados com problemas. O script automaticamente tenta novamente sem verificação SSL. Se ainda falhar, baixe o componente manualmente (o log indica a URL).
+
+
+% ====================================================================
+% NOVAS FUNCIONALIDADES v2.3.0
+% ====================================================================
+
+\section{Dashboard HMI --- Painel Automotivo}
+
+O Remote Flasher inclui um painel automotivo interativo com três modos de exibição: \textbf{Elétrico}, \textbf{Combustão Automático} e \textbf{Combustão Manual}. Os gauges e indicadores são atualizados em tempo real a partir dos dados seriais do Arduino.
+
+\subsection{Modos de exibição}
+
+\begin{itemize}[nosep]
+  \item \textbf{Elétrico}: Velocímetro central, bateria (RadialBar), barra de potência/regeneração, informações de autonomia, distância e velocidade média
+  \item \textbf{Combustão Automático}: Tacômetro + velocímetro lado a lado, gauges de temperatura e combustível, seletor P/R/N/D
+  \item \textbf{Combustão Manual}: Tacômetro + velocímetro, diagrama H do câmbio, indicador de marcha, gauges laterais
+\end{itemize}
+
+Todos os modos incluem:
+\begin{itemize}[nosep]
+  \item \textbf{Luzes de aviso}: motor, óleo, bateria, freio, ABS, airbag (desenhadas em Canvas)
+  \item \textbf{Indicadores SVG}: pressão dos pneus, porta aberta, controle de tração, serviço
+  \item \textbf{Indicadores de status}: luzes de estacionamento, farol baixo/alto, neblina, cinto, cruise, setas
+  \item \textbf{DoorStatus}: silhueta do carro com indicação de portas, capô e porta-malas abertos
+  \item \textbf{Odômetro}: display 7-segmentos (fonte DSEG7) dentro do velocímetro
+  \item \textbf{Setas}: indicadores de seta esquerda/direita nos cantos superiores
+\end{itemize}
+
+\subsection{Como ativar o Dashboard}
+
+\begin{enumerate}[nosep]
+  \item Abra uma conexão serial na aba \textbf{Serial}
+  \item Marque a caixa \textbf{``Feed Dashboard''} no painel serial
+  \item Mude para a aba \textbf{Dashboard}
+  \item Os gauges se atualizam automaticamente com base nos nomes dos sinais recebidos
+\end{enumerate}
+
+\begin{notabox}
+Apenas uma conexão serial pode alimentar o Dashboard por vez. Ao marcar ``Feed Dashboard'' em um painel, qualquer outro painel que estava alimentando é desconectado automaticamente.
+\end{notabox}
+
+
+\section{Plotter Serial --- Gráficos em Tempo Real}
+
+A aba \textbf{Plotter} exibe gráficos de todos os sinais recebidos via serial em tempo real, com renderização GPU a 30\,fps via \texttt{pyqtgraph}.
+
+\subsection{Funcionalidades}
+
+\begin{itemize}[nosep]
+  \item \textbf{Auto-descoberta}: sinais são detectados automaticamente pelo nome (formato \texttt{chave:valor})
+  \item \textbf{Configuração por sinal}: cor, escala vertical, offset, visibilidade (checkbox)
+  \item \textbf{Janela deslizante}: 5s, 10s, 30s, 60s ou 120s
+  \item \textbf{Pause/Resume}: congela a visualização sem perder dados
+  \item \textbf{Hover}: cursor mostra os valores de todos os sinais visíveis no ponto
+  \item \textbf{Export CSV}: salva todos os dados bufferizados em arquivo
+  \item \textbf{Zoom/Pan}: scroll do mouse para zoom, arrastar para pan
+\end{itemize}
+
+\subsection{Formato dos dados seriais}
+
+O Plotter aceita dois formatos:
+
+\textbf{1. Formato nomeado (recomendado):}
+\begin{codigobox}
+speed:50.0,rpm:7200,coolantTemp:85.5,gear:8
+\end{codigobox}
+
+Os nomes são usados como rótulos no gráfico e, se reconhecidos, atualizam automaticamente o Dashboard.
+
+\textbf{2. Formato CSV posicional (compatibilidade):}
+\begin{codigobox}
+50.0,7200,85.5,8
+\end{codigobox}
+
+Neste caso, os sinais são nomeados CH0, CH1, CH2\ldots{} e \textbf{não} atualizam o Dashboard (não há mapeamento por nome).
+
+\subsection{Painel de sinais}
+
+O painel lateral esquerdo do Plotter mostra todos os sinais detectados. Para cada sinal:
+\begin{itemize}[nosep]
+  \item \textbf{Checkbox}: mostra/oculta no gráfico
+  \item \textbf{Cor}: clique no quadrado colorido para alterar
+  \item \textbf{Nome}: editável (apenas visual, não afeta o mapeamento)
+  \item \textbf{S (Scale)}: multiplicador do eixo Y (ex.: 0.001 para RPM em milhares)
+  \item \textbf{O (Offset)}: deslocamento vertical (útil para separar sinais sobrepostos)
+\end{itemize}
+
+
+\section{Referência Rápida --- DashboardSignals}
+
+A biblioteca \texttt{DashboardSignals} permite enviar sinais nomeados do Arduino para o Dashboard e Plotter do Remote Flasher.
+
+\subsection{Instalação}
+
+Copie \texttt{DashboardSignals.h} e \texttt{DashboardSignals.cpp} da pasta \texttt{arduino\_lib/DashboardSignals/} para o diretório do seu projeto. Adicione no \texttt{.oil}:
+\begin{codigobox}
+APP\_SRC = "DashboardSignals.cpp";
+\end{codigobox}
+
+\subsection{API}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{lX}
+  \toprule
+  \textbf{Função} & \textbf{Descrição} \\
+  \midrule
+  \texttt{dashInit()} & Inicializa o sistema. Chamar uma vez no \texttt{setup()} \\
+  \texttt{dashSend(nome, valor)} & Bufferea um float com 1 casa decimal \\
+  \texttt{dashSendPrec(nome, valor, casas)} & Bufferea um float com N casas decimais \\
+  \texttt{dashSendInt(nome, valor)} & Bufferea um inteiro \\
+  \texttt{dashSendBool(nome, valor)} & Bufferea um booleano (enviado como 1/0) \\
+  \texttt{dashFlush()} & Envia todos os sinais bufferizados como uma linha CSV \\
+  \texttt{dashBufferCount()} & Retorna quantos sinais estão no buffer \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{dicabox}[Importante]
+Chame \texttt{dashFlush()} \textbf{uma vez por ciclo} da task, não por sinal. Isso garante que todos os sinais cheguem na mesma linha e tenham o mesmo timestamp no Plotter.
+\end{dicabox}
+
+\subsection{Exemplo mínimo}
+
+\begin{codigobox}
+\#include "DashboardSignals.h"
+
+void setup() \{\\
+\hspace*{2em}Serial.begin(115200);\\
+\hspace*{2em}dashInit();\\
+\}
+
+TASK(EnviarDados) \{\\
+\hspace*{2em}dashSend("speed", 80.5);\\
+\hspace*{2em}dashSend("rpm", 3500.0);\\
+\hspace*{2em}dashSendBool("checkEngine", false);\\
+\hspace*{2em}dashFlush();\\
+\hspace*{2em}TerminateTask();\\
+\}
+\end{codigobox}
+
+\subsection{Nomes de sinais reconhecidos pelo Dashboard}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{lX}
+  \toprule
+  \textbf{Categoria} & \textbf{Nomes dos sinais} \\
+  \midrule
+  Gauges & \texttt{speed}, \texttt{rpm}, \texttt{coolantTemp}, \texttt{fuelLevel}, \texttt{battery}, \texttt{power}, \texttt{rangeKm} \\
+  Marchas & \texttt{gear} (P=7, R=-1, N=0, D=8), \texttt{manualGear} (N=0, R=-1, 1--6) \\
+  Odômetro & \texttt{distance}, \texttt{avgSpeed} \\
+  Portas & \texttt{doorFL}, \texttt{doorFR}, \texttt{doorRL}, \texttt{doorRR}, \texttt{trunk}, \texttt{hood} \\
+  Avisos & \texttt{checkEngine}, \texttt{oilPressure}, \texttt{batteryWarn}, \texttt{brakeWarn}, \texttt{absWarn}, \texttt{airbagWarn} \\
+  Status & \texttt{parkingLights}, \texttt{lowBeam}, \texttt{highBeam}, \texttt{fogLights}, \texttt{seatbeltUnbuckled} \\
+  Setas & \texttt{turnLeft}, \texttt{turnRight} \\
+  Extra & \texttt{cruiseActive}, \texttt{ecoMode}, \texttt{evCharging}, \texttt{serviceDue}, \texttt{tirePressure}, \texttt{doorOpen}, \texttt{tractionControl} \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+Qualquer sinal com nome \textbf{não listado} acima ainda aparece normalmente no Plotter --- útil para dados específicos da aplicação como \texttt{throttle}, \texttt{brakeForce}, \texttt{steeringAngle}, etc.
+
+
+\section{Verificação de Saúde do Laboratório (Health Check)}
+
+A aba \textbf{VPN} inclui um painel de diagnóstico que verifica remotamente o status de cada PC do laboratório.
+
+\subsection{Como usar}
+
+Após conectar a VPN, clique em \textbf{``Run Health Check''}. O sistema faz SSH em cada PC e executa o script \texttt{test\_ttl.ps1} para verificar os controladores das placas.
+
+\textbf{Legenda do grid:}
+\begin{itemize}[nosep]
+  \item \textcolor{green!70!black}{Verde (OK)}: controlador respondendo normalmente
+  \item \textcolor{red}{Vermelho (FROZEN)}: controlador travado --- necessita reset manual dos cabos
+  \item \textcolor{orange}{Laranja (SSH fail)}: PC inacessível via SSH
+\end{itemize}
+
+O status da câmera (apenas PC~217) também é verificado --- indica se o processo \texttt{camera1.py} está em execução.
+
+\subsection{Scripts de automação}
+
+Na pasta \texttt{remote\_scripts/} estão dois scripts para instalar nos PCs:
+
+\textbf{SSHD Watchdog} (\texttt{setup\_sshd\_watchdog.ps1}): verifica a cada 5 minutos se o serviço SSH está respondendo corretamente (incluindo o banner SSH, não apenas a porta TCP). Se não responder, reinicia automaticamente.
+\begin{codigobox}
+powershell -ExecutionPolicy Bypass -File setup\_sshd\_watchdog.ps1
+\end{codigobox}
+
+\textbf{Camera Autostart} (\texttt{setup\_camera\_autostart.ps1}): inicia o servidor de câmera automaticamente no logon do PC~217.
+\begin{codigobox}
+powershell -ExecutionPolicy Bypass -File setup\_camera\_autostart.ps1
+\end{codigobox}
+
+
+\section{Sincronização de Portas COM (Port Lock)}
+
+Quando múltiplos usuários usam o Remote Flasher simultaneamente, o sistema de \textbf{lock de portas} evita que dois usuários abram a mesma porta COM.
+
+\subsection{Como funciona}
+
+\begin{enumerate}[nosep]
+  \item Ao abrir uma conexão serial, o app cria um arquivo de lock no PC remoto (ex.: \texttt{C:\textbackslash 2026\textbackslash locks\textbackslash COM25.lock})
+  \item O arquivo contém o nome do usuário, máquina e timestamp
+  \item Outros usuários veem a porta como \textbf{indisponível} no dropdown (``in use by renato'')
+  \item Ao fechar a conexão, o lock é removido automaticamente
+\end{enumerate}
+
+\subsection{Proteção contra falhas}
+
+\begin{itemize}[nosep]
+  \item \textbf{Heartbeat}: a cada 60 segundos, o timestamp do lock é atualizado
+  \item \textbf{Expiração automática}: locks com mais de 12 minutos sem atualização são removidos (protege contra crashes ou desconexões)
+  \item \textbf{Idle timeout}: conexões seriais sem dados por 10 minutos são fechadas automaticamente
+  \item \textbf{Polling}: o app verifica o estado dos locks a cada 60 segundos (apenas quando a VPN está conectada)
+\end{itemize}
+
 
 \end{document}
