@@ -125,21 +125,21 @@ Item {
 
         // New SVG-based warnings, sized to roughly match WarningIcons
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.tirePressure : false
             activeSvg: "assets/tire_pressure_active.svg"
             inactiveSvg: "assets/tire_pressure_inactive.svg"
         }
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.doorOpen : false
             activeSvg: "assets/door_open_active.svg"
             inactiveSvg: "assets/door_open_inactive.svg"
         }
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.serviceDue : false
             activeSvg: "assets/service_active.svg"
@@ -210,6 +210,7 @@ Item {
             value: dashboard ? dashboard.speed : 0
             maximumValue: 250; labelStepSize: 50; minorTickStep: 25
             unitLabel: "km/h"; redZoneStart: -1
+            odometerValue: dashboard ? dashboard.distance : 0
         }
 
         // Info column — range, distance, avg speed (right side)

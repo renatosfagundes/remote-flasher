@@ -63,8 +63,9 @@ class _HMIBridge(QObject):
     distanceChanged = Signal()
     avgSpeedChanged = Signal()
     fuelAvgChanged = Signal()
-    # Int signal
+    # Int signals
     gearChanged = Signal()
+    manualGearChanged = Signal()
     # Bool signals (doors)
     doorFLChanged = Signal()
     doorFRChanged = Signal()
@@ -112,7 +113,8 @@ class _HMIBridge(QObject):
         self._avgSpeed = 0.0
         self._fuelAvg = 0.0
         # Int
-        self._gear = 7  # P
+        self._gear = 7  # P (auto default)
+        self._manualGear = 0  # N (manual default)
         # Bools (doors)
         self._doorFL = False
         self._doorFR = False
@@ -250,6 +252,17 @@ class _HMIBridge(QObject):
 
     gear = Property(int, _get_gear, _set_gear, notify=gearChanged)
 
+    def _get_manualGear(self):
+        return self._manualGear
+
+    def _set_manualGear(self, v):
+        v = int(v)
+        if self._manualGear != v:
+            self._manualGear = v
+            self.manualGearChanged.emit()
+
+    manualGear = Property(int, _get_manualGear, _set_manualGear, notify=manualGearChanged)
+
     # ── Vehicle mode (int, persisted) ──────────────────────────────
     def _get_vehicleMode(self):
         return self._vehicleMode
@@ -278,7 +291,8 @@ _DEFAULT_CHANNEL_MAP = {
     "rangeKm": 7,
 }
 
-_GEAR_CHANNEL = 4
+_GEAR_CHANNEL = 4        # auto gear (P/R/N/D)
+_MANUAL_GEAR_CHANNEL = 34  # manual gear (N/R/1-6)
 
 _DOOR_CHANNEL_MAP = {
     "doorFL": 8,
@@ -375,9 +389,11 @@ class HMIDashboardTab(QWidget):
         for name, ch in _DEFAULT_CHANNEL_MAP.items():
             if ch < len(vals):
                 setattr(self._bridge, name, float(vals[ch]))
-        # Gear (int)
+        # Gear (int) — auto and manual on separate channels
         if _GEAR_CHANNEL < len(vals):
             self._bridge._set_gear(int(vals[_GEAR_CHANNEL]))
+        if _MANUAL_GEAR_CHANNEL < len(vals):
+            self._bridge._set_manualGear(int(vals[_MANUAL_GEAR_CHANNEL]))
         # Doors (bool: >=1 means open)
         for name, ch in _DOOR_CHANNEL_MAP.items():
             if ch < len(vals):

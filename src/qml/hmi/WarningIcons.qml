@@ -60,7 +60,7 @@ Canvas {
 
         if (iconType === "engine") {
             // Normalized Scale for Engine SVG Data
-            ctx.scale(0.04 * s, 0.04 * s);
+            ctx.scale(0.055 * s, 0.055 * s);
             ctx.translate(-640, -512);
             ctx.lineWidth = 60;  // thick at SVG scale (60 * 0.04 ≈ 2.4px)
 
@@ -85,7 +85,7 @@ Canvas {
 
         } else if (iconType === "oil") {
             // Normalized Scale for Oil SVG Data
-            ctx.scale(0.05 * s, 0.05 * s);
+            ctx.scale(0.065 * s, 0.065 * s);
             ctx.translate(-512, -512);
             ctx.lineWidth = 45;  // thick at SVG scale (45 * 0.05 ≈ 2.25px)
 

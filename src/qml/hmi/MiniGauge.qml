@@ -12,8 +12,8 @@ Item {
     property real dangerBelow: -1
     property real s: 1.0
 
-    width: 160 * s
-    height: 320 * s
+    implicitWidth: 160 * s
+    implicitHeight: 320 * s
 
     readonly property bool isLeft: label === "TEMP"
     

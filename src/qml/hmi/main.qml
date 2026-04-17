@@ -4,14 +4,15 @@ import QtQuick.Layouts 1.15
 
 /*
   Adaptive car dashboard shell.
-  Switches between Electric / Combustion Auto / Combustion Manual.
-  Bottom bar: door status + speed readout + gear selector.
-  All null-safe: dashboard ? dashboard.X : default
+  Modes are always laid out at their native 1200×650, then uniformly
+  scaled to fit the available window — no RowLayout sizing issues.
+  Bottom bar: speed readout + gear selector.
 */
 Rectangle {
     id: root
     color: "#0c0c14"
 
+    // Scale factor for the thin top/bottom bars (responsive)
     readonly property real sx: width  / 1200
     readonly property real sy: height / 650
     readonly property real s:  Math.min(sx, sy)
@@ -29,18 +30,34 @@ Rectangle {
     }
 
     // ── Mode content area ─────────────────────────────────────────
-    StackLayout {
-        id: modeStack
-        currentIndex: dashboard ? dashboard.vehicleMode : 1
+    // Modes render at a fixed 1200×650 canvas (s=1) and are uniformly
+    // scaled to fit the available space. This avoids all Layout sizing
+    // fights — the modes always see the same coordinate space.
+    Item {
+        id: modeArea
+        clip: true
         anchors {
             top: settingsBar.bottom
             left: parent.left; right: parent.right
             bottom: bottomBar.top
         }
 
-        ElectricMode         { s: root.s }
-        CombustionAutoMode   { s: root.s }
-        CombustionManualMode { s: root.s }
+        Item {
+            id: scaler
+            width: 1200; height: 650
+            anchors.centerIn: parent
+            scale: Math.min(modeArea.width / 1200, modeArea.height / 650)
+
+            StackLayout {
+                id: modeStack
+                anchors.fill: parent
+                currentIndex: dashboard ? dashboard.vehicleMode : 1
+
+                ElectricMode         { }
+                CombustionAutoMode   { }
+                CombustionManualMode { }
+            }
+        }
     }
 
     // ── Bottom bar ────────────────────────────────────────────────

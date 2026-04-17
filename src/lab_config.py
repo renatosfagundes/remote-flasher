@@ -71,32 +71,6 @@ COMPUTERS = {
             "can_selector_port": "COM60",
         },
     }),
-    f"PC 218 ({SSH_HOSTS['PC 218']['host']})": _pc("PC 218", "avrdude", {
-        "Placa 01": {
-            "ecu_ports": ["COM13", "COM14", "COM15", "COM16"],
-            "reset_port": None,
-            "reset_script": None,
-            "can_selector_port": None,
-        },
-        "Placa 02": {
-            "ecu_ports": ["COM17", "COM18", "COM19", "COM20"],
-            "reset_port": None,
-            "reset_script": None,
-            "can_selector_port": None,
-        },
-        "Placa 03": {
-            "ecu_ports": ["COM21", "COM22", "COM23", "COM24"],
-            "reset_port": None,
-            "reset_script": None,
-            "can_selector_port": None,
-        },
-        "Placa 04": {
-            "ecu_ports": ["COM25", "COM26", "COM27", "COM28"],
-            "reset_port": None,
-            "reset_script": None,
-            "can_selector_port": None,
-        },
-    }),
     f"PC 220 ({SSH_HOSTS['PC 220']['host']})": _pc("PC 220", "flash.py", {
         "Placa 01": {
             "ecu_ports": ["COM3", "COM4", "COM5", "COM6"],
@@ -121,32 +95,6 @@ COMPUTERS = {
             "reset_port": "COM39",
             "reset_script": None,
             "can_selector_port": None,  # not responding
-        },
-    }),
-    f"PC 221 ({SSH_HOSTS['PC 221']['host']})": _pc("PC 221", "avrdude", {
-        "Placa 01": {
-            "ecu_ports": ["COM54", "COM55", "COM56", "COM57"],
-            "reset_port": None,
-            "reset_script": None,
-            "can_selector_port": None,
-        },
-        "Placa 02": {
-            "ecu_ports": ["COM50", "COM51", "COM52", "COM53"],
-            "reset_port": None,
-            "reset_script": None,
-            "can_selector_port": None,
-        },
-        "Placa 03": {
-            "ecu_ports": ["COM42", "COM43", "COM44", "COM45"],
-            "reset_port": None,
-            "reset_script": None,
-            "can_selector_port": None,
-        },
-        "Placa 04": {
-            "ecu_ports": ["COM46", "COM47", "COM48", "COM49"],
-            "reset_port": None,
-            "reset_script": None,
-            "can_selector_port": None,
         },
     }),
 }

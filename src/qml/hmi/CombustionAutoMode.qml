@@ -178,32 +178,6 @@ Item {
                 }
             }
 
-            // Bigger, prominent odometer directly below
-            Rectangle {
-                Layout.preferredWidth: 200 * root.s
-                Layout.preferredHeight: 56 * root.s
-                Layout.alignment: Qt.AlignHCenter
-                color: "#0a0a18"; radius: 8 * root.s
-                border.color: "#252540"; border.width: 1
-
-                Column {
-                    anchors.centerIn: parent
-                    spacing: 2 * root.s
-                    Text {
-                        text: (dashboard ? dashboard.distance : 0).toFixed(0) + " km"
-                        font.pixelSize: 22 * root.s
-                        font.family: "Consolas"; font.bold: true; color: "#bbb"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                    Text {
-                        text: "ODOMETER"
-                        font.pixelSize: 10 * root.s
-                        font.family: "sans-serif"; color: "#555"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                }
-            }
-
             // Top-down car silhouette with door / hood / trunk indicators
             DoorStatus {
                 id: doorStatus
@@ -230,6 +204,7 @@ Item {
             value: dashboard ? dashboard.speed : 0
             maximumValue: 220; labelStepSize: 40; minorTickStep: 20
             unitLabel: "km/h"; accentColor: "#01E6DE"; redZoneStart: -1
+            odometerValue: dashboard ? dashboard.distance : 0
         }
 
         MiniGauge {
@@ -263,28 +238,28 @@ Item {
         WarningIcons { iconType: "airbag";  iconColor: "#FF3B30"; active: dashboard ? dashboard.airbagWarn  : false; s: root.s * 0.9 }
 
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.tirePressure : false
             activeSvg: "assets/tire_pressure_active.svg"
             inactiveSvg: "assets/tire_pressure_inactive.svg"
         }
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.doorOpen : false
             activeSvg: "assets/door_open_active.svg"
             inactiveSvg: "assets/door_open_inactive.svg"
         }
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.tractionControl : false
             activeSvg: "assets/traction_control_active.svg"
             inactiveSvg: "assets/traction_control_inactive.svg"
         }
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.serviceDue : false
             activeSvg: "assets/service_active.svg"

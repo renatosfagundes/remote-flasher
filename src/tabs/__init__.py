@@ -6,10 +6,10 @@ from tabs.serial_tab import SerialTab
 from tabs.ssh_tab import SSHTerminalTab
 from tabs.setup_tab import SetupTab
 from tabs.gauges_tab import GaugesTab
-from tabs.plots_tab import PlotsTab
 from tabs.hmi_tab import HMIDashboardTab
+from tabs.plotter_tab import PlotterTab
 
 __all__ = [
     "VPNTab", "FlashTab", "CANTab", "SerialTab", "SSHTerminalTab", "SetupTab",
-    "GaugesTab", "PlotsTab", "HMIDashboardTab",
+    "GaugesTab", "HMIDashboardTab", "PlotterTab",
 ]

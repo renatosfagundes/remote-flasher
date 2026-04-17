@@ -15,9 +15,10 @@ from lab_config import COMPUTERS
 from settings import APP_DIR
 from workers import CameraWorker
 from dashboard_backend import DashboardBackend
+from port_lock import PortLockManager
 from tabs import (
     VPNTab, FlashTab, CANTab, SerialTab, SSHTerminalTab, SetupTab,
-    GaugesTab, PlotsTab, HMIDashboardTab,
+    GaugesTab, HMIDashboardTab, PlotterTab,
 )
 
 
@@ -115,15 +116,16 @@ class MainWindow(QMainWindow):
         # Dashboard backend (shared by HMI Dashboard + Plots tabs)
         self.dashboard_backend = DashboardBackend()
         self.gauges_tab = HMIDashboardTab(self.dashboard_backend)
-        self.plots_tab = PlotsTab(self.dashboard_backend)
+        self.plotter_tab = PlotterTab()
         self._dashboard_source_panel = None
+        self._plotter_source_panel = None
 
         self.tabs.addTab(self.vpn_tab, "VPN")
         self.tabs.addTab(self.flash_tab, "Flash")
         self.tabs.addTab(self.can_tab, "CAN")
         self.tabs.addTab(self.serial_tab, "Serial")
         self.tabs.addTab(self.gauges_tab, "Dashboard")
-        self.tabs.addTab(self.plots_tab, "Plots")
+        self.tabs.addTab(self.plotter_tab, "Plotter")
         self.tabs.addTab(self.ssh_tab, "SSH Terminal")
         self.tabs.addTab(self.setup_tab, "Setup")
 
@@ -139,13 +141,21 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self.main_splitter)
 
+        # Port lock manager — polls lock files on lab PCs, enabled only when VPN is up
+        self.lock_manager = PortLockManager(self)
+        self.serial_tab.lock_manager = self.lock_manager
+        self.lock_manager.locks_changed.connect(self._on_locks_changed)
+        self.vpn_tab.vpn_status_changed.connect(self.lock_manager.set_enabled)
+
         self.serial_tab.panel_count_changed.connect(self._on_serial_panel_count)
         self.flash_tab.ports_synced.connect(self._on_ports_synced)
 
-        # Dashboard source wiring (Plots tab has the source selector;
-        # HMI Dashboard tab shares the same backend and receives data too.)
-        self.serial_tab.panel_count_changed.connect(self._refresh_dashboard_sources)
-        self.plots_tab.source_changed.connect(self._on_dashboard_source)
+        # Plotter backend gets the dashboard bridge for auto-routing named signals
+        self.plotter_tab.backend.set_dashboard_bridge(
+            self.gauges_tab._bridge if hasattr(self.gauges_tab, '_bridge') else None
+        )
+        self._feed_panel = None  # the serial panel currently feeding dashboard/plotter
+        self.serial_tab.feed_toggled.connect(self._on_feed_toggled)
 
         self.toggle_cam_btn = QPushButton("Hide Camera")
         self.toggle_cam_btn.setCheckable(True)
@@ -158,6 +168,7 @@ class MainWindow(QMainWindow):
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._on_tab_changed(self.tabs.currentIndex())
+
 
         self.statusBar().showMessage(f"v{__version__} — Ready — connect VPN first, then use Flash/Camera/Serial tabs")
 
@@ -185,6 +196,12 @@ class MainWindow(QMainWindow):
             if callable(panel_handler):
                 panel_handler(panel.pc_combo.currentText())
 
+    def _on_locks_changed(self):
+        """Refresh port dropdowns when remote lock state changes."""
+        for panel in getattr(self.serial_tab, "panels", []):
+            if panel.serial_worker is None:  # only refresh idle panels
+                panel._on_board_changed(None)
+
     def _on_serial_panel_count(self, count):
         if self.tabs.currentWidget() is not self.serial_tab:
             return
@@ -198,7 +215,7 @@ class MainWindow(QMainWindow):
 
     def _update_camera_visibility(self):
         hide_camera = self.tabs.currentWidget() in (
-            self.vpn_tab, self.setup_tab, self.gauges_tab, self.plots_tab,
+            self.vpn_tab, self.setup_tab, self.gauges_tab, self.plotter_tab,
         )
         self.camera_panel.setVisible(not hide_camera and self._camera_visible)
         self.toggle_cam_btn.setVisible(not hide_camera)
@@ -207,50 +224,33 @@ class MainWindow(QMainWindow):
     # Dashboard source management
     # ------------------------------------------------------------------
 
-    def _refresh_dashboard_sources(self, _count=None):
-        """Rebuild the source combo in dashboard tabs that have one."""
-        for combo in (self.plots_tab.source_combo,):
-            prev = combo.currentData()
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem("(none)", userData=-1)
-            for i, panel in enumerate(getattr(self.serial_tab, "panels", [])):
-                worker = getattr(panel, "serial_worker", None)
-                if worker is not None:
-                    key = getattr(panel, "_connected_port_key", None)
-                    label = f"Serial {i + 1}"
-                    if key:
-                        label += f" \u2014 {key}"
-                    combo.addItem(label, userData=i)
-            # Restore previous selection if still valid
-            idx = combo.findData(prev)
-            combo.setCurrentIndex(idx if idx >= 0 else 0)
-            combo.blockSignals(False)
+    def _on_feed_toggled(self, panel, checked):
+        """Connect/disconnect a serial panel's output to plotter + dashboard."""
+        backend = self.plotter_tab.backend
 
-    def _on_dashboard_source(self, panel_index: int):
-        """Connect the selected serial panel's worker to the dashboard backend."""
-        # Disconnect previous source
-        if self._dashboard_source_panel is not None:
-            worker = getattr(self._dashboard_source_panel, "serial_worker", None)
+        # Disconnect previous feed panel
+        if self._feed_panel is not None:
+            worker = getattr(self._feed_panel, "serial_worker", None)
             if worker is not None:
                 try:
-                    worker.output.disconnect(self.dashboard_backend.onSerialLine)
+                    worker.output.disconnect(backend.onSerialLine)
                 except RuntimeError:
                     pass
-            self._dashboard_source_panel = None
+            self._feed_panel = None
 
-        # Connect new source
-        panels = getattr(self.serial_tab, "panels", [])
-        if 0 <= panel_index < len(panels):
-            panel = panels[panel_index]
-            worker = getattr(panel, "serial_worker", None)
-            if worker is not None:
-                worker.output.connect(self.dashboard_backend.onSerialLine)
-                self._dashboard_source_panel = panel
+        if not checked:
+            return
 
-        # (No cross-tab combo sync needed — only Plots has a source selector now.)
+        # Connect new feed panel
+        worker = getattr(panel, "serial_worker", None)
+        if worker is not None:
+            worker.output.connect(backend.onSerialLine)
+            self._feed_panel = panel
 
     def closeEvent(self, event):
+        # Stop all active serial connections before closing
+        for panel in self.serial_tab.panels:
+            panel.cleanup()
         self.dashboard_backend.stopLogging()
         if self.vpn_tab._connected:
             msg = QMessageBox(self)

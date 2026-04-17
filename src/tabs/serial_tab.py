@@ -1,14 +1,16 @@
 """Serial terminal tab — up to 4 independent connections with spatial layout."""
 import os
+import threading
 
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QComboBox, QLineEdit, QFrame, QSplitter, QCheckBox,
-    QSlider, QGroupBox,
+    QSlider, QGroupBox, QMessageBox,
 )
 
 from lab_config import COMPUTERS, SERIAL_DEFAULTS
+from port_lock import acquire_lock, release_lock, refresh_lock
 from settings import get_remote_user_dir
 from widgets import LogWidget
 from workers import SerialWorker, SCPWorker
@@ -277,6 +279,7 @@ class SerialPanel(QFrame):
     """Compact serial connection panel — config in grid, log takes the space."""
     port_usage_changed = Signal()
     close_requested = Signal(object)
+    feed_toggled = Signal(object, bool)  # (self, checked) — route data to dashboard/plotter
 
     def __init__(self, parent_tab, parent=None):
         super().__init__(parent)
@@ -324,6 +327,12 @@ class SerialPanel(QFrame):
         self.connect_btn = QPushButton("Open Serial")
         self.connect_btn.clicked.connect(self._toggle_serial)
         btn_row.addWidget(self.connect_btn)
+
+        self.feed_cb = QCheckBox("Feed Dashboard")
+        self.feed_cb.setToolTip("Route this serial data to the Dashboard and Plotter tabs")
+        self.feed_cb.setEnabled(False)  # enabled when connected
+        self.feed_cb.toggled.connect(self._on_feed_toggled)
+        btn_row.addWidget(self.feed_cb)
 
         self.upload_btn = QPushButton("Upload serialterm.py")
         self.upload_btn.setToolTip("Upload serialterm.py to remote folder")
@@ -394,9 +403,23 @@ class SerialPanel(QFrame):
         all_ports = board.get("ecu_ports", [])
         used = self._parent_tab.get_used_ports(exclude=self)
         pc_name = self.pc_combo.currentText()
-        available = [p for p in all_ports if (pc_name, p) not in used]
+
+        # Get remote lock state from the lock manager (if available)
+        lock_mgr = getattr(self._parent_tab, "lock_manager", None)
+        remote_locks = lock_mgr.cached_locks() if lock_mgr else {}
+
         self.port_combo.clear()
-        self.port_combo.addItems(available)
+        for p in all_ports:
+            if (pc_name, p) in used:
+                continue  # used by another local panel
+            lock = remote_locks.get((pc_name, p))
+            if lock and not lock.is_stale():
+                self.port_combo.addItem(f"{p}  (in use by {lock.display()})")
+                # Disable the item so user can't select it
+                idx = self.port_combo.count() - 1
+                self.port_combo.model().item(idx).setEnabled(False)
+            else:
+                self.port_combo.addItem(p)
 
     def refresh_ports(self):
         self._on_board_changed(None)
@@ -407,18 +430,53 @@ class SerialPanel(QFrame):
         else:
             self._start_serial()
 
+    # Auto-close after 10 minutes of no serial data
+    IDLE_TIMEOUT_MS = 10 * 60 * 1000
+
+    _lock_result = Signal(bool, str)  # success, owner
+
     def _start_serial(self):
+        pc = self._get_pc_cfg()
+        port = self.port_combo.currentText()
+        if not port:
+            return
+
+        # Acquire lock in background to avoid blocking the UI
+        self.connect_btn.setEnabled(False)
+        self.log.append_log(f"[Serial] Checking if {port} is available...")
+
+        def _try_lock():
+            ok, owner = acquire_lock(pc, port)
+            self._lock_result.emit(ok, owner)
+
+        # One-shot connection for this attempt
+        self._lock_result.connect(self._on_lock_result, Qt.SingleShotConnection)
+        threading.Thread(target=_try_lock, daemon=True).start()
+
+    def _on_lock_result(self, success: bool, owner: str):
+        if not success:
+            port = self.port_combo.currentText()
+            self.log.append_log(f"[Serial] {port} is in use by {owner}")
+            QMessageBox.warning(
+                self, "Port In Use",
+                f"{port} is currently being used by:\n\n  {owner}\n\n"
+                "Please choose a different port or wait for the user to disconnect."
+            )
+            self.connect_btn.setEnabled(True)
+            return
+
+        # Lock acquired — proceed with connection
         pc = self._get_pc_cfg()
         port = self.port_combo.currentText()
         baud = self.baudrate.currentText()
         remote_dir = self.remote_dir.text().strip()
-        if not port:
-            return
         self._connected_port_key = (self.pc_combo.currentText(), port)
         self.connect_btn.setText("Close Serial")
+        self.connect_btn.setEnabled(True)
         self.send_input.setEnabled(True)
         self.send_btn.setEnabled(True)
         self.vio_panel.setEnabled(True)
+        self.feed_cb.setEnabled(True)
         self.pc_combo.setEnabled(False)
         self.board_combo.setEnabled(False)
         self.port_combo.setEnabled(False)
@@ -433,6 +491,19 @@ class SerialPanel(QFrame):
         self.serial_worker.start()
         self.port_usage_changed.emit()
 
+        # Start idle timer — resets on every data received
+        if not hasattr(self, '_idle_timer'):
+            self._idle_timer = QTimer(self)
+            self._idle_timer.setSingleShot(True)
+            self._idle_timer.timeout.connect(self._on_idle_timeout)
+        self._idle_timer.start(self.IDLE_TIMEOUT_MS)
+
+        # Start heartbeat timer to refresh lock timestamp
+        if not hasattr(self, '_heartbeat_timer'):
+            self._heartbeat_timer = QTimer(self)
+            self._heartbeat_timer.timeout.connect(self._refresh_lock)
+        self._heartbeat_timer.start(60_000)  # every 60s
+
     def _send_command(self):
         if not self.serial_worker:
             return
@@ -443,8 +514,14 @@ class SerialPanel(QFrame):
         self.serial_worker.send_data(text)
         self.send_input.clear()
 
+    def _on_feed_toggled(self, checked):
+        self.feed_toggled.emit(self, checked)
+
     def _on_serial_output(self, line):
         """Intercept serial output — parse VIO LED commands, pass rest to log."""
+        # Reset idle timer on any data received
+        if hasattr(self, '_idle_timer') and self._idle_timer.isActive():
+            self._idle_timer.start(self.IDLE_TIMEOUT_MS)
         if not self.vio_panel.parse_output_line(line):
             self.log.append_log(line)
 
@@ -481,13 +558,45 @@ class SerialPanel(QFrame):
         self.send_btn.setEnabled(False)
         self.vio_panel.setEnabled(False)
         self.vio_panel.reset()
+        self.feed_cb.setEnabled(False)
+        if self.feed_cb.isChecked():
+            self.feed_cb.setChecked(False)  # triggers _on_feed_toggled → disconnects backends
         self.pc_combo.setEnabled(True)
         self.board_combo.setEnabled(True)
         self.port_combo.setEnabled(True)
         self.baudrate.setEnabled(True)
         self.remote_dir.setEnabled(True)
 
+    def _refresh_lock(self):
+        """Heartbeat: update the lock timestamp so it doesn't go stale."""
+        pc = self._get_pc_cfg()
+        port = self.port_combo.currentText()
+        if pc and port:
+            threading.Thread(
+                target=refresh_lock, args=(pc, port), daemon=True
+            ).start()
+
+    def _on_idle_timeout(self):
+        """Auto-close serial connection after prolonged inactivity."""
+        if self.serial_worker:
+            self.log.append_log("[Serial] Auto-closed after 10 minutes of inactivity.")
+            self._stop_serial()
+
     def _stop_serial(self):
+        if hasattr(self, '_idle_timer'):
+            self._idle_timer.stop()
+        if hasattr(self, '_heartbeat_timer'):
+            self._heartbeat_timer.stop()
+
+        # Release the lock in a background thread (best-effort)
+        if self._connected_port_key:
+            pc_label, port = self._connected_port_key
+            pc_info = COMPUTERS.get(pc_label, {})
+            if pc_info:
+                threading.Thread(
+                    target=release_lock, args=(pc_info, port), daemon=True
+                ).start()
+
         if self.serial_worker:
             self.serial_worker.stop()
             self.serial_worker.wait(3000)
@@ -511,6 +620,7 @@ class SerialTab(QWidget):
     """Spatial serial layout: 1=full, 2=side-by-side, 3=2+1, 4=2x2 grid."""
     MAX_PANELS = 4
     panel_count_changed = Signal(int)
+    feed_toggled = Signal(object, bool)  # (panel, checked) — bubbled from SerialPanel
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -540,9 +650,20 @@ class SerialTab(QWidget):
         panel = SerialPanel(parent_tab=self)
         panel.port_usage_changed.connect(self._refresh_all_ports)
         panel.close_requested.connect(self._remove_panel)
+        panel.feed_toggled.connect(self._on_feed_toggled)
         self.panels.append(panel)
         self._rebuild_layout()
         self._update_add_btn()
+
+    def _on_feed_toggled(self, panel, checked):
+        """Ensure only one panel feeds at a time, then bubble to MainWindow."""
+        if checked:
+            for p in self.panels:
+                if p is not panel and p.feed_cb.isChecked():
+                    p.feed_cb.blockSignals(True)
+                    p.feed_cb.setChecked(False)
+                    p.feed_cb.blockSignals(False)
+        self.feed_toggled.emit(panel, checked)
 
     def _remove_panel(self, panel):
         if panel in self.panels:

@@ -110,16 +110,31 @@ class SSHWorker(QThread):
 
             out_buf = b""
             err_buf = b""
+            t_start = time.time()
 
             while not channel.exit_status_ready() or channel.recv_ready() or channel.recv_stderr_ready():
                 if self._stop:
                     break
+                # Hard timeout — if the remote process hangs (e.g. avrdude
+                # stuck on a COM port), don't wait forever.
+                if time.time() - t_start > self.timeout:
+                    self.output.emit(
+                        f"[SSH] Timed out after {self.timeout}s — remote process may be stuck. "
+                        "Check if the COM port is available."
+                    )
+                    try:
+                        channel.close()
+                    except Exception:
+                        pass
+                    break
                 if channel.recv_ready():
                     out_buf += channel.recv(4096)
                     out_buf = self._emit_lines(out_buf)
+                    t_start = time.time()  # reset on activity
                 if channel.recv_stderr_ready():
                     err_buf += channel.recv_stderr(4096)
                     err_buf = self._emit_lines(err_buf, prefix="")
+                    t_start = time.time()  # reset on activity
                 if not channel.recv_ready() and not channel.recv_stderr_ready():
                     time.sleep(0.1)
 

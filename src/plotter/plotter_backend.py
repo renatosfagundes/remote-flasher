@@ -1,0 +1,244 @@
+"""Plotter data backend — receives serial lines, parses named or CSV signals.
+
+Supports two formats:
+  Named:      speed:50.0,rpm:7200,coolantTemp:85.5
+  Positional:  50.0,7200,85.5  (columns become CH0, CH1, CH2)
+
+Named signals that match HMI dashboard property names are auto-routed
+to the dashboard backend.
+"""
+import time
+
+from PySide6.QtCore import QObject, Signal, Slot
+
+from plotter.ring_buffer import RingBuffer
+from plotter.signal_config import SignalConfig
+
+
+DEFAULT_CAPACITY = 50_000
+
+# Dashboard property names that can be auto-routed from named serial signals.
+# Maps signal_name (lowercase) → bridge property name.
+_DASHBOARD_PROPS = {
+    "speed": "speed",
+    "rpm": "rpm",
+    "coolanttemp": "coolantTemp",
+    "fuellevel": "fuelLevel",
+    "battery": "battery",
+    "power": "power",
+    "rangekm": "rangeKm",
+    "distance": "distance",
+    "avgspeed": "avgSpeed",
+    "gear": "gear",
+    "manualgear": "manualGear",
+    # Doors
+    "doorfl": "doorFL", "doorfr": "doorFR",
+    "doorrl": "doorRL", "doorrr": "doorRR",
+    "trunk": "trunk", "hood": "hood",
+    # Warning lights
+    "checkengine": "checkEngine", "oilpressure": "oilPressure",
+    "batterywarn": "batteryWarn", "brakewarn": "brakeWarn",
+    "abswarn": "absWarn", "airbagwarn": "airbagWarn",
+    # Status lights
+    "parkinglights": "parkingLights", "lowbeam": "lowBeam",
+    "highbeam": "highBeam", "foglights": "fogLights",
+    "seatbeltunbuckled": "seatbeltUnbuckled",
+    "turnleft": "turnLeft", "turnright": "turnRight",
+    "cruiseactive": "cruiseActive", "ecomode": "ecoMode",
+    "evcharging": "evCharging",
+    "servicedue": "serviceDue", "tirepressure": "tirePressure",
+    "dooropen": "doorOpen", "tractioncontrol": "tractionControl",
+}
+
+
+class PlotterBackend(QObject):
+    """Parses serial lines (named or CSV), stores ring buffers, routes to dashboard.
+
+    Signals:
+        channelCountChanged(int) — channel count changed.
+        signalDiscovered(str) — a new named signal was found.
+    """
+    channelCountChanged = Signal(int)
+    signalDiscovered = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._signal_names: list[str] = []         # ordered signal names
+        self._name_to_index: dict[str, int] = {}   # name → buffer index
+        self._time_buf = RingBuffer(DEFAULT_CAPACITY)
+        self._channel_bufs: list[RingBuffer] = []
+        self._configs: list[SignalConfig] = []
+        self._t0: float | None = None
+        self._dirty = False
+        self._paused = False
+        self._dashboard_bridge = None  # set by MainWindow
+
+    def set_dashboard_bridge(self, bridge):
+        """Set the HMI bridge so named signals can be auto-routed."""
+        self._dashboard_bridge = bridge
+
+    @property
+    def channel_count(self) -> int:
+        return len(self._signal_names)
+
+    @property
+    def configs(self) -> list[SignalConfig]:
+        return list(self._configs)
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @paused.setter
+    def paused(self, v: bool):
+        self._paused = v
+
+    def time_buffer(self) -> RingBuffer:
+        return self._time_buf
+
+    def channel_buffer(self, index: int) -> RingBuffer:
+        if 0 <= index < len(self._channel_bufs):
+            return self._channel_bufs[index]
+        return RingBuffer(0)
+
+    def signal_names(self) -> list[str]:
+        return list(self._signal_names)
+
+    def update_config(self, index: int, cfg: SignalConfig):
+        if 0 <= index < len(self._configs):
+            self._configs[index] = cfg
+
+    def _get_or_create_signal(self, name: str) -> int:
+        """Return the buffer index for a signal, creating it if new."""
+        if name in self._name_to_index:
+            return self._name_to_index[name]
+        idx = len(self._signal_names)
+        self._signal_names.append(name)
+        self._name_to_index[name] = idx
+        self._channel_bufs.append(RingBuffer(DEFAULT_CAPACITY))
+        self._configs.append(SignalConfig(index=idx, name=name))
+        self.signalDiscovered.emit(name)
+        self.channelCountChanged.emit(len(self._signal_names))
+        return idx
+
+    def _route_to_dashboard(self, name: str, value: float):
+        """If the signal name matches a dashboard property, push the value."""
+        if self._dashboard_bridge is None:
+            return
+        prop = _DASHBOARD_PROPS.get(name.lower())
+        if prop is None:
+            return
+        try:
+            setattr(self._dashboard_bridge, prop, value)
+        except Exception:
+            pass
+
+    @Slot(str)
+    def onSerialLine(self, line: str):
+        """Parse a serial line — named (key:value) or positional CSV."""
+        stripped = line.strip()
+        if not stripped or stripped[0] in ("[", "!", ">", "#"):
+            return
+
+        # Detect format: named if contains ":" with text before it
+        if ":" in stripped and not stripped[0].isdigit() and not stripped[0] == "-":
+            self._parse_named(stripped)
+        else:
+            self._parse_csv(stripped)
+
+    def _parse_named(self, line: str):
+        """Parse key:value,key:value format."""
+        now = time.perf_counter()
+        if self._t0 is None:
+            self._t0 = now
+        self._time_buf.append(now - self._t0)
+
+        # Pad all existing buffers with their last value (hold) so arrays
+        # stay aligned even if a signal is missing from this line.
+        for buf in self._channel_bufs:
+            arr = buf.get_last(1)
+            buf.append(arr[0] if len(arr) > 0 else 0.0)
+
+        pairs = line.split(",")
+        for pair in pairs:
+            pair = pair.strip()
+            if ":" not in pair:
+                continue
+            key, val_str = pair.split(":", 1)
+            key = key.strip()
+            val_str = val_str.strip()
+            try:
+                value = float(val_str)
+            except ValueError:
+                continue
+
+            idx = self._get_or_create_signal(key)
+            # Overwrite the hold value with the actual value
+            buf = self._channel_bufs[idx]
+            # Replace the last appended hold value
+            buf._buf[(buf._head - 1) % buf._capacity] = value
+
+            self._route_to_dashboard(key, value)
+
+        self._dirty = True
+
+    def _parse_csv(self, line: str):
+        """Parse positional CSV: 1.0,2.0,3.0 → CH0,CH1,CH2."""
+        parts = line.split(",")
+        try:
+            values = [float(p.strip()) for p in parts]
+        except ValueError:
+            return
+
+        now = time.perf_counter()
+        if self._t0 is None:
+            self._t0 = now
+        self._time_buf.append(now - self._t0)
+
+        for i, v in enumerate(values):
+            name = f"CH{i}"
+            idx = self._get_or_create_signal(name)
+            self._channel_bufs[idx].append(v)
+
+        self._dirty = True
+
+    def check_dirty(self) -> bool:
+        if self._dirty:
+            self._dirty = False
+            return True
+        return False
+
+    def reset(self):
+        self._time_buf.clear()
+        for buf in self._channel_bufs:
+            buf.clear()
+        self._channel_bufs.clear()
+        self._configs.clear()
+        self._signal_names.clear()
+        self._name_to_index.clear()
+        self._t0 = None
+        self._dirty = False
+        self.channelCountChanged.emit(0)
+
+    def export_csv(self, filepath: str):
+        import csv
+        t = self._time_buf.get_array()
+        n = len(t)
+        if n == 0:
+            return
+
+        channels = []
+        for i in range(len(self._signal_names)):
+            arr = self._channel_bufs[i].get_array()
+            if len(arr) < n:
+                import numpy as np
+                arr = np.pad(arr, (0, n - len(arr)), constant_values=0)
+            channels.append(arr)
+
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            headers = ["time_s"] + self._signal_names
+            writer.writerow(headers)
+            for j in range(n):
+                row = [f"{t[j]:.4f}"] + [f"{ch[j]:.6g}" for ch in channels]
+                writer.writerow(row)

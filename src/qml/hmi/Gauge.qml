@@ -19,9 +19,14 @@ Item {
     // displayDivisor=1000, decimals=1 → "1.0").
     property real displayDivisor: 1
     property int  decimals: 0
+    // Optional odometer inside the gauge face (like a real dashboard).
+    // Set to >= 0 to show; negative hides it.
+    property real odometerValue: -1
 
-    width: 400 * s
-    height: 400 * s
+    // Use implicit sizes so RowLayout can freely override via
+    // Layout.preferredWidth / Layout.fillWidth without fighting a binding.
+    implicitWidth: 400 * s
+    implicitHeight: 400 * s
 
     // Internal helper for angle calculations
     readonly property real _range: maximumValue - minimumValue
@@ -221,6 +226,39 @@ Item {
             color: root.accentColor
             font.pixelSize: root._dim * 0.028
             font.letterSpacing: root._dim * 0.004
+        }
+    }
+
+    // ── 7-segment odometer at bottom of gauge face ────────────────
+    // Positioned independently near the bottom of the dial arc,
+    // like a real mechanical/LED trip counter.
+    FontLoader {
+        id: dseg7
+        source: "assets/DSEG7Classic-Bold.ttf"
+    }
+
+    Rectangle {
+        visible: root.odometerValue >= 0
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenterOffset: root._dim * 0.33
+        width: odoText.width + root._dim * 0.04
+        height: odoText.height + root._dim * 0.02
+        color: "#050510"
+        radius: root._dim * 0.012
+        border.color: "#1a1a30"; border.width: 1
+
+        Text {
+            id: odoText
+            anchors.centerIn: parent
+            text: {
+                var s = Math.floor(root.odometerValue).toString();
+                while (s.length < 6) s = "0" + s;
+                return s;
+            }
+            font.pixelSize: root._dim * 0.048
+            font.family: dseg7.name
+            color: "#01E6DE"
         }
     }
 }

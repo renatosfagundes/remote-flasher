@@ -1,0 +1,42 @@
+// Example 09: Dashboard Basic — speed + RPM at 20 Hz
+OIL_VERSION = "2.5" : "dashboard_basic";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "dashboard_basic.cpp";
+      APP_SRC = "DashboardSignals.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM dashAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = SendDashboard; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 50;
+      CYCLETIME = 50;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK SendDashboard {
+    PRIORITY = 5;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};

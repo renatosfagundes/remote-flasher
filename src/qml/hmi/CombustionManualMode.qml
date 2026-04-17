@@ -131,42 +131,13 @@ Item {
             // DISABLED for perf test: Behavior on value { NumberAnimation { duration: 400 } }
         }
 
-        // Centre: H-PATTERN SHIFT DIAGRAM + Odometer (Upgraded)
+        // Centre: GEAR + H-PATTERN + DOOR STATUS
         ColumnLayout {
             Layout.preferredWidth: 220 * root.s
             Layout.fillHeight: true
-            spacing: 10 * s // Space between diagram and odometer
+            spacing: 6 * s
 
-            Item { Layout.fillHeight: true }  // top spacer
-
-            // Odometer — matches auto mode size for consistency
-            Rectangle {
-                id: odometerBox
-                Layout.preferredWidth: 200 * root.s
-                Layout.preferredHeight: 56 * root.s
-                Layout.alignment: Qt.AlignHCenter
-                color: "#0a0a18"; radius: 8 * root.s
-                border.color: "#252540"; border.width: 1
-
-                Column {
-                    anchors.centerIn: parent
-                    spacing: 2 * root.s
-                    Text {
-                        text: (dashboard ? dashboard.distance : 0).toFixed(0) + " km"
-                        font.pixelSize: 22 * root.s
-                        font.family: "Consolas"; font.bold: true; color: "#bbb"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                    Text {
-                        text: "ODOMETER"
-                        font.pixelSize: 10 * root.s
-                        font.family: "sans-serif"; color: "#555"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                }
-            }
-
-            // Big current-gear readout (between odometer and H-pattern)
+            // Big current-gear readout
             Rectangle {
                 id: currentGearBox
                 Layout.preferredWidth: 80 * root.s
@@ -177,13 +148,12 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    // Manual transmission: only N, R, 1-6 are valid
                     text: {
-                        var g = dashboard ? dashboard.gear : 0;
+                        var g = dashboard ? dashboard.manualGear : 0;
                         if (g === 0) return "N";
                         if (g === -1) return "R";
                         if (g >= 1 && g <= 6) return g.toString();
-                        return "–";  // invalid for manual (e.g. P or D from signal)
+                        return "N";
                     }
                     font.pixelSize: 50 * root.s
                     font.family: "Consolas"; font.bold: true; color: "#01E6DE"
@@ -201,7 +171,7 @@ Item {
                 Connections {
                     target: dashboard
                     ignoreUnknownSignals: true
-                    function onGearChanged() { shiftCanvas.requestPaint() }
+                    function onManualGearChanged() { shiftCanvas.requestPaint() }
                 }
                 onPaint: {
                     var ctx = getContext("2d");
@@ -283,7 +253,7 @@ Item {
 
                     // Highlight logic — N lights up on the rail centre;
                     // P and D are invalid for manual, so we draw nothing for them.
-                    var currentGear = dashboard ? dashboard.gear : 0;
+                    var currentGear = dashboard ? dashboard.manualGear : 0;
                     if (currentGear === 0) {
                         // N at rail centre (between 3-4 and 5-6)
                         var nx = (x_34 + x_56) / 2;
@@ -323,9 +293,6 @@ Item {
                 }
             }
 
-            // NOTE: currentGearBox is now placed earlier in the column
-            // (see above the Canvas H-pattern) using Layout.alignment.
-
             // Top-down car silhouette with door / hood / trunk indicators
             DoorStatus {
                 id: doorStatus
@@ -340,9 +307,6 @@ Item {
                 hood:   dashboard ? dashboard.hood   : false
                 trunk:  dashboard ? dashboard.trunk  : false
             }
-
-            // Spacer for RowLayout balance
-            Item { Layout.fillHeight: true }
         }
 
         // Speed Gauge
@@ -353,7 +317,8 @@ Item {
             Layout.fillHeight: true
             value: dashboard ? dashboard.speed : 0
             maximumValue: 220; labelStepSize: 40; minorTickStep: 20
-            unitLabel: "km/h"; accentColor: "#01E6DE"; redZoneStart: -1 // redZoneStart is -1
+            unitLabel: "km/h"; accentColor: "#01E6DE"; redZoneStart: -1
+            odometerValue: dashboard ? dashboard.distance : 0
             // DISABLED for perf test: Behavior on value { NumberAnimation { duration: 600 } }
         }
 
@@ -372,50 +337,45 @@ Item {
 
     // Peripheral element anchors (placed outside of RowLayout to avoid moving main gauges)
 
-    // Bottom warning row — split into left and right clusters with a gap
-    // in the middle so nothing overlaps the DoorStatus car silhouette above.
-    // Order: brake | engine | oil | battery | [gap] | ABS | airbag | SVG icons
-    RowLayout {
+    // Bottom warning row — single continuous row
+    Row {
         id: warningIcons
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 15 * root.s
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.horizontalCenterOffset: -27 * root.s
         spacing: 12 * root.s
 
-        // Left cluster
         WarningIcons { iconType: "brake";   iconColor: "#FF3B30"; active: dashboard ? dashboard.brakeWarn   : false; s: root.s * 0.9 }
         WarningIcons { iconType: "engine";  iconColor: "#FF9F00"; active: dashboard ? dashboard.checkEngine : false; s: root.s * 0.9 }
         WarningIcons { iconType: "oil";     iconColor: "#FF3B30"; active: dashboard ? dashboard.oilPressure : false; s: root.s * 0.9 }
         WarningIcons { iconType: "battery"; iconColor: "#FF3B30"; active: dashboard ? dashboard.batteryWarn : false; s: root.s * 0.9 }
-
-        // Gap to clear the DoorStatus silhouette
-        Item { Layout.preferredWidth: 150 * root.s }
-
-        // Right cluster
         WarningIcons { iconType: "abs";     iconColor: "#FF9F00"; active: dashboard ? dashboard.absWarn     : false; s: root.s * 0.9 }
         WarningIcons { iconType: "airbag";  iconColor: "#FF3B30"; active: dashboard ? dashboard.airbagWarn  : false; s: root.s * 0.9 }
 
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
+            anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.tirePressure : false
             activeSvg: "assets/tire_pressure_active.svg"
             inactiveSvg: "assets/tire_pressure_inactive.svg"
         }
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
+            anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.doorOpen : false
             activeSvg: "assets/door_open_active.svg"
             inactiveSvg: "assets/door_open_inactive.svg"
         }
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
+            anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.tractionControl : false
             activeSvg: "assets/traction_control_active.svg"
             inactiveSvg: "assets/traction_control_inactive.svg"
         }
         StatusLight {
-            s: root.s; iconSize: 36 * root.s
+            s: root.s; iconSize: 45 * root.s
+            anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.serviceDue : false
             activeSvg: "assets/service_active.svg"
             inactiveSvg: "assets/service_inactive.svg"

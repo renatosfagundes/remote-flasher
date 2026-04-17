@@ -1,0 +1,43 @@
+// Example 12: Dashboard Doors — interactive doors via VirtualIO + Dashboard
+OIL_VERSION = "2.5" : "dashboard_doors";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "dashboard_doors.cpp";
+      APP_SRC = "DashboardSignals.cpp";
+      APP_SRC = "VirtualIO.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM ioAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = UpdateIO; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 100;
+      CYCLETIME = 100;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK UpdateIO {
+    PRIORITY = 10;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};
