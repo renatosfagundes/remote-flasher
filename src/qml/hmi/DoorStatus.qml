@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 
 /*
   Top-down bird's-eye car with door-ajar indicators.
@@ -14,6 +15,7 @@ Item {
     property bool trunk: false
     property bool hood: false
     property real s: 1.0
+    property string tooltipText: "Door / hood / trunk status\nSignals: doorFL, doorFR, doorRL, doorRR, hood, trunk"
 
     width: 120 * s
     height: 190 * s
@@ -319,5 +321,23 @@ Item {
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 2 * s }
         text: root.trunk ? "TRUNK OPEN" : ""
         color: "#FF3B3B"; font.pixelSize: 9 * s; font.family: "Consolas"; font.bold: true
+    }
+
+    MouseArea {
+        id: hover
+        anchors.fill: parent
+        hoverEnabled: root.tooltipText !== ""
+        acceptedButtons: Qt.NoButton
+
+        ToolTip {
+            parent: hover
+            x: hover.mouseX + width + 15 > hover.width
+               ? hover.mouseX - width - 5
+               : hover.mouseX + 15
+            y: hover.mouseY + 20
+            visible: hover.containsMouse && root.tooltipText !== ""
+            text: root.tooltipText
+            delay: 500
+        }
     }
 }

@@ -71,6 +71,7 @@ class PlotterTab(QWidget):
         splitter.addWidget(self._signal_list)
 
         self._plot = PlotterWidget(self._backend)
+        self._plot.signalVisibilityToggled.connect(self._signal_list.set_visibility)
         splitter.addWidget(self._plot)
 
         splitter.setStretchFactor(0, 0)

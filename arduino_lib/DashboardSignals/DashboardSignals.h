@@ -6,8 +6,12 @@
  *   - All signals appear in the Plotter tab for real-time graphing
  *   - Signals with recognized names automatically update the HMI Dashboard
  *
- * Serial format (one line per flush):
- *   speed:50.0,rpm:7200,coolantTemp:85.5,gear:8
+ * Serial format (one line per flush) — prefixed with '$' to mark the line
+ * as a signal message (mirrors VIO's '!' convention):
+ *   $speed:50.0,rpm:7200,coolantTemp:85.5,gear:8
+ *
+ * Lines without the '$' prefix are treated as normal Serial.print output
+ * and don't show up in the Dashboard or Plotter.
  *
  * Dashboard-recognized signal names (case-insensitive matching):
  *

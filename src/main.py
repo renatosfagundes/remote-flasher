@@ -9,6 +9,37 @@ from _version import __version__
 import sys
 import os
 import logging
+import traceback
+import faulthandler
+
+# Enable Python fault handler — dumps a traceback on native crashes
+# (segfaults, aborts) to stderr instead of vanishing silently.
+faulthandler.enable()
+
+
+def _excepthook(exc_type, exc_value, exc_tb):
+    """Log any uncaught Python exception instead of letting it close the
+    app silently. Keeps the original message visible in the console."""
+    print("\n" + "=" * 60, file=sys.stderr)
+    print("UNCAUGHT EXCEPTION — app may have misbehaved:", file=sys.stderr)
+    traceback.print_exception(exc_type, exc_value, exc_tb, file=sys.stderr)
+    print("=" * 60 + "\n", file=sys.stderr)
+
+
+def _thread_excepthook(args):
+    """QThread/paramiko/threading exceptions don't hit sys.excepthook —
+    they go here. Log them so threading bugs don't silently kill the app."""
+    print("\n" + "=" * 60, file=sys.stderr)
+    print(f"THREAD EXCEPTION in {args.thread.name!r}:", file=sys.stderr)
+    traceback.print_exception(
+        args.exc_type, args.exc_value, args.exc_traceback, file=sys.stderr
+    )
+    print("=" * 60 + "\n", file=sys.stderr)
+
+
+sys.excepthook = _excepthook
+import threading
+threading.excepthook = _thread_excepthook
 
 # Suppress noisy socket/urllib3 warnings on console
 logging.getLogger("urllib3").setLevel(logging.CRITICAL)

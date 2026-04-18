@@ -1,8 +1,9 @@
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 
 Item {
     id: root
-    
+
     // --- Properties ---
     property real value: 0
     property real minimumValue: 0
@@ -22,6 +23,9 @@ Item {
     // Optional odometer inside the gauge face (like a real dashboard).
     // Set to >= 0 to show; negative hides it.
     property real odometerValue: -1
+    // Tooltip text shown on hover (leave empty to disable).
+    property string tooltipText: ""
+    property string odometerTooltipText: ""
 
     // Use implicit sizes so RowLayout can freely override via
     // Layout.preferredWidth / Layout.fillWidth without fighting a binding.
@@ -238,6 +242,7 @@ Item {
     }
 
     Rectangle {
+        id: odoBox
         visible: root.odometerValue >= 0
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
@@ -259,6 +264,48 @@ Item {
             font.pixelSize: root._dim * 0.048
             font.family: dseg7.name
             color: "#01E6DE"
+        }
+
+        // Odometer-specific tooltip (overrides the gauge's tooltip on this area)
+        MouseArea {
+            id: odoHover
+            anchors.fill: parent
+            hoverEnabled: root.odometerTooltipText !== ""
+            acceptedButtons: Qt.NoButton
+
+            ToolTip {
+                id: odoTip
+                parent: odoHover
+                x: odoHover.mouseX + width + 15 > odoHover.width
+                   ? odoHover.mouseX - width - 5
+                   : odoHover.mouseX + 15
+                y: odoHover.mouseY + 20
+                visible: odoHover.containsMouse && root.odometerTooltipText !== ""
+                text: root.odometerTooltipText
+                delay: 500
+            }
+        }
+    }
+
+    // Gauge-face tooltip (shown when hovering anywhere over the gauge)
+    MouseArea {
+        id: gaugeHover
+        anchors.fill: parent
+        hoverEnabled: root.tooltipText !== ""
+        acceptedButtons: Qt.NoButton
+        z: -1  // below the odometer box so the odometer tooltip wins when hovered
+
+        ToolTip {
+            id: gaugeTip
+            parent: gaugeHover
+            x: gaugeHover.mouseX + width + 15 > gaugeHover.width
+               ? gaugeHover.mouseX - width - 5
+               : gaugeHover.mouseX + 15
+            y: gaugeHover.mouseY + 20
+            visible: gaugeHover.containsMouse && root.tooltipText !== ""
+                     && !(odoBox.visible && odoHover.containsMouse)
+            text: root.tooltipText
+            delay: 500
         }
     }
 }

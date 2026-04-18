@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 
 /*
   Horizontal power/regen bar for EV mode.
@@ -10,6 +11,7 @@ Item {
     property real maxPower: 300
     property real maxRegen: 100
     property real s: 1.0
+    property string tooltipText: ""
 
     width: 300 * s
     height: 55 * s
@@ -154,5 +156,23 @@ Item {
         text: "POWER"
         color: "#01E6DE"; opacity: 0.5
         font.pixelSize: 9 * s; font.family: "Consolas"; font.bold: true
+    }
+
+    MouseArea {
+        id: hover
+        anchors.fill: parent
+        hoverEnabled: root.tooltipText !== ""
+        acceptedButtons: Qt.NoButton
+
+        ToolTip {
+            parent: hover
+            x: hover.mouseX + width + 15 > hover.width
+               ? hover.mouseX - width - 5
+               : hover.mouseX + 15
+            y: hover.mouseY + 20
+            visible: hover.containsMouse && root.tooltipText !== ""
+            text: root.tooltipText
+            delay: 500
+        }
     }
 }

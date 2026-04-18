@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 
 Canvas {
     id: iconCanvas
@@ -6,6 +7,7 @@ Canvas {
     property color iconColor: "#FF9F00"
     property bool active: false
     property real s: 1.0
+    property string tooltipText: ""   // Set to show a tooltip on hover
 
     // Cached gradient — created once per (size, color) pair, reused
     // across paints to avoid JS allocation pressure that triggers V4 GC.
@@ -192,7 +194,17 @@ Canvas {
             // Airbag circle
             ctx.beginPath(); ctx.arc(8, -1, 6.5, 0, 2 * Math.PI); ctx.stroke();
         }
-        
+
         ctx.restore();
+    }
+
+    MouseArea {
+        id: hover
+        anchors.fill: parent
+        hoverEnabled: iconCanvas.tooltipText !== ""
+        acceptedButtons: Qt.NoButton
+        ToolTip.visible: containsMouse && iconCanvas.tooltipText !== ""
+        ToolTip.text: iconCanvas.tooltipText
+        ToolTip.delay: 500
     }
 }

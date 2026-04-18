@@ -69,8 +69,6 @@ class InfoCardWidget(QFrame):
         self.setStyleSheet(
             "InfoCardWidget { background: #0c0c20; border: 1px solid #1a3050; border-radius: 6px; }"
         )
-        if tooltip:
-            self.setToolTip(tooltip)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(1)
@@ -94,6 +92,14 @@ class InfoCardWidget(QFrame):
 
         self.setFixedHeight(55)
 
+        # Propagate tooltip to all children — child QLabels cover the frame
+        # entirely, so Qt's default tooltip bubbling doesn't reach the parent.
+        if tooltip:
+            self.setToolTip(tooltip)
+            self._label.setToolTip(tooltip)
+            self._value_lbl.setToolTip(tooltip)
+            self._units_lbl.setToolTip(tooltip)
+
     def set_value(self, text: str):
         self._value_lbl.setText(text)
 
@@ -105,8 +111,6 @@ class StatusLightWidget(QFrame):
         super().__init__(parent)
         self._on_color = color
         self.setStyleSheet("StatusLightWidget { border: none; }")
-        if tooltip:
-            self.setToolTip(tooltip)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
@@ -125,6 +129,13 @@ class StatusLightWidget(QFrame):
         layout.addWidget(self._lbl)
 
         self.setFixedWidth(50)
+
+        # Propagate tooltip to children so hovering over the dot or label
+        # triggers it (child widgets cover the parent's hover area).
+        if tooltip:
+            self.setToolTip(tooltip)
+            self._dot.setToolTip(tooltip)
+            self._lbl.setToolTip(tooltip)
 
     def _set_active(self, active: bool):
         if active:
@@ -155,7 +166,9 @@ class GaugesTab(QWidget):
         super().__init__(parent)
         self._backend = backend
         self._cfg = _load_config()
-        self.setStyleSheet("background: #0a0a18;")
+        # Scoped selector — an unscoped rule cascades into every child and
+        # can suppress tooltip events on some Qt themes.
+        self.setStyleSheet("GaugesTab { background: #0a0a18; }")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -196,7 +209,8 @@ class GaugesTab(QWidget):
             g.setMaxValue(gcfg.get("max", 100))
             g.units = gcfg.get("units", "")
             g.setScalaCount(gcfg.get("scalaCount", 10))
-            g.setMouseTracking(False)
+            # Leave mouse tracking enabled (the default) so tooltips fire reliably.
+            # Disabling it suppresses QEvent::ToolTip on some themes.
             g.setToolTip(
                 f"{gcfg.get('label', 'Gauge')}\n"
                 f"Channel: {gcfg.get('channel', i)}\n"

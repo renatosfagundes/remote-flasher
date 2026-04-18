@@ -69,6 +69,7 @@ void loop() {
   int gear = autoGears[(int)(t / 3.0) % autoGearCount];
   int mGear = manualGears[(int)(t / 2.0) % manualGearCount];
 
+  Serial.print('$');  // signal-line prefix (like VIO's '!')
   printSignal("speed", speed);        Serial.print(',');
   printSignal("rpm", rpm, 0);         Serial.print(',');
   printSignal("coolantTemp", coolant); Serial.print(',');

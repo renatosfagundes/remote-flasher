@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QComboBox, QLineEdit, QFrame, QSplitter, QCheckBox,
-    QSlider, QGroupBox, QMessageBox,
+    QSlider, QGroupBox, QMessageBox, QSizePolicy,
 )
 
 from lab_config import COMPUTERS, SERIAL_DEFAULTS
@@ -61,7 +61,11 @@ class VirtualIOPanel(QFrame):
 
             btn = QPushButton()
             btn.setCheckable(True)
-            btn.setFixedSize(36, 36)
+            btn.setFixedSize(36, 36)  # resized dynamically in _update_button_sizes
+            btn.setToolTip(
+                f"Virtual button B{i+1} — sends !B{i+1}:1 when pressed, "
+                f"!B{i+1}:0 when released."
+            )
             btn.setStyleSheet(self._btn_style(False, self._BTN_COLORS[i]))
             btn.toggled.connect(
                 lambda checked, idx=i, c=self._BTN_COLORS[i]: self._on_btn_toggle(idx, checked, c)
@@ -92,6 +96,10 @@ class VirtualIOPanel(QFrame):
 
             led = QLabel()
             led.setFixedSize(20, 20)
+            led.setToolTip(
+                f"Virtual LED L{i+1} — controlled by the Arduino via "
+                f"!L{i+1}:<brightness> (0–255)."
+            )
             led.setStyleSheet(self._led_style(0, self._LED_COLORS[i]))
             led_col.addWidget(led, alignment=Qt.AlignCenter)
 
@@ -125,6 +133,10 @@ class VirtualIOPanel(QFrame):
             slider.setRange(0, 1023)
             slider.setValue(0)
             slider.setFixedWidth(90)
+            slider.setToolTip(
+                f"Virtual potentiometer P{i+1} — sends !P{i+1}:<0-1023> "
+                "when the slider moves (throttled to 20 updates/s)."
+            )
             slider.setStyleSheet(
                 "QSlider::groove:horizontal { background: #3c3c3c; height: 6px; "
                 "border-radius: 3px; }"
@@ -133,7 +145,10 @@ class VirtualIOPanel(QFrame):
                 "QSlider::sub-page:horizontal { background: #1565c0; border-radius: 3px; }"
             )
 
-            timer = QTimer()
+            # Parent to `self` so Qt owns it and stops/destroys it together
+            # with the VirtualIOPanel — avoids orphan timers firing after
+            # the panel is gone and the sliders are deleted.
+            timer = QTimer(self)
             timer.setSingleShot(True)
             timer.setInterval(50)
             timer.timeout.connect(lambda idx=i: self._send_pot(idx))
@@ -158,14 +173,16 @@ class VirtualIOPanel(QFrame):
         return sep
 
     @staticmethod
-    def _btn_style(pressed, color="#c0392b"):
+    def _btn_style(pressed, color="#c0392b", diameter=36):
+        # Half the diameter = circular border. Scales with the dynamic size.
+        r = diameter // 2
         if pressed:
             return (
                 f"QPushButton {{"
                 f"  background: qradialgradient(cx:0.5, cy:0.5, radius:0.7, "
                 f"    fx:0.5, fy:0.6, stop:0 {color}, stop:1 #1a1a1a);"
                 f"  border: 3px solid #111;"
-                f"  border-radius: 18px;"
+                f"  border-radius: {r}px;"
                 f"  padding: 0;"
                 f"}}"
             )
@@ -174,7 +191,7 @@ class VirtualIOPanel(QFrame):
             f"  background: qradialgradient(cx:0.4, cy:0.35, radius:0.8, "
             f"    fx:0.4, fy:0.3, stop:0 #666, stop:0.6 #3c3c3c, stop:1 #222);"
             f"  border: 2px solid #555;"
-            f"  border-radius: 18px;"
+            f"  border-radius: {r}px;"
             f"  padding: 0;"
             f"}}"
             f"QPushButton:hover {{"
@@ -224,7 +241,8 @@ class VirtualIOPanel(QFrame):
 
     def _on_btn_toggle(self, idx, checked, color="#c0392b"):
         self._btn_states[idx] = checked
-        self._buttons[idx].setStyleSheet(self._btn_style(checked, color))
+        d = self._buttons[idx].width()  # use current dynamic diameter
+        self._buttons[idx].setStyleSheet(self._btn_style(checked, color, d))
         self.command.emit(f"!B{idx+1}:{1 if checked else 0}")
 
     def _on_slider_change(self, idx, value, label):
@@ -232,7 +250,16 @@ class VirtualIOPanel(QFrame):
         self._throttle_timers[idx].start()
 
     def _send_pot(self, idx):
-        value = self._sliders[idx].value()
+        # Guard: the timer can fire after the panel is being destroyed, at
+        # which point the Qt slider object may already be deleted even though
+        # the Python wrapper still exists. Accessing it would raise
+        # RuntimeError from shiboken.
+        if idx >= len(self._sliders):
+            return
+        try:
+            value = self._sliders[idx].value()
+        except RuntimeError:
+            return  # slider deleted — nothing to do
         self.command.emit(f"!P{idx+1}:{value}")
 
     def set_led(self, idx, brightness):
@@ -263,6 +290,40 @@ class VirtualIOPanel(QFrame):
         for slider in self._sliders:
             slider.setEnabled(enabled)
 
+    # VIO button sizing: default diameter 36, shrink only when the panel is
+    # too narrow to fit 4 full-size circles side-by-side.
+    VIO_BTN_MAX = 36
+    VIO_BTN_MIN = 20
+    VIO_POT_MAX = 90
+    VIO_POT_MIN = 50
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Reserve for LEDs (4×20 + inner spacing), separators, outer layout
+        # margins and outer-layout spacings. What's left is shared between
+        # 4 buttons and 2 pot sliders.
+        reserved = 175
+        avail = max(0, self.width() - reserved)
+
+        # Two-stage shrink: give pots their minimum first so sliders stay
+        # usable, then give the rest to buttons. Both clamp to their max.
+        pot_w = (avail - 4 * self.VIO_BTN_MIN) // 2
+        pot_w = max(self.VIO_POT_MIN, min(self.VIO_POT_MAX, pot_w))
+        d = (avail - 2 * pot_w) // 4
+        d = max(self.VIO_BTN_MIN, min(self.VIO_BTN_MAX, d))
+
+        for i, btn in enumerate(self._buttons):
+            if btn.width() != d:
+                btn.setFixedSize(d, d)
+                btn.setStyleSheet(
+                    self._btn_style(btn.isChecked(), self._BTN_COLORS[i], d)
+                )
+
+        for slider, label in zip(self._sliders, self._slider_labels):
+            if slider.width() != pot_w:
+                slider.setFixedWidth(pot_w)
+                label.setFixedWidth(pot_w)
+
     def reset(self):
         """Reset all controls to default state."""
         for i, btn in enumerate(self._buttons):
@@ -279,7 +340,8 @@ class SerialPanel(QFrame):
     """Compact serial connection panel — config in grid, log takes the space."""
     port_usage_changed = Signal()
     close_requested = Signal(object)
-    feed_toggled = Signal(object, bool)  # (self, checked) — route data to dashboard/plotter
+    # (self, target, checked) — target is "dashboard" or "plotter"
+    feed_toggled = Signal(object, str, bool)
 
     def __init__(self, parent_tab, parent=None):
         super().__init__(parent)
@@ -340,11 +402,25 @@ class SerialPanel(QFrame):
         self.connect_btn.clicked.connect(self._toggle_serial)
         btn_row.addWidget(self.connect_btn)
 
-        self.feed_cb = ToggleSwitch("Feed Dashboard")
-        self.feed_cb.setToolTip("Route this serial data to the Dashboard and Plotter tabs")
-        self.feed_cb.setEnabled(False)  # enabled when connected
-        self.feed_cb.toggled.connect(self._on_feed_toggled)
-        btn_row.addWidget(self.feed_cb)
+        self.feed_dash_cb = ToggleSwitch("Feed Dashboard")
+        self.feed_dash_cb.setToolTip(
+            "Route this serial's signal lines ($...) to the HMI Dashboard gauges."
+        )
+        self.feed_dash_cb.setEnabled(False)  # enabled when connected
+        self.feed_dash_cb.toggled.connect(
+            lambda c: self.feed_toggled.emit(self, "dashboard", c)
+        )
+        btn_row.addWidget(self.feed_dash_cb)
+
+        self.feed_plot_cb = ToggleSwitch("Feed Plotter")
+        self.feed_plot_cb.setToolTip(
+            "Route this serial's signal lines ($...) to the Plotter tab."
+        )
+        self.feed_plot_cb.setEnabled(False)
+        self.feed_plot_cb.toggled.connect(
+            lambda c: self.feed_toggled.emit(self, "plotter", c)
+        )
+        btn_row.addWidget(self.feed_plot_cb)
 
         self.upload_btn = QPushButton("Upload serialterm.py")
         self.upload_btn.setToolTip("Upload serialterm.py to remote folder")
@@ -352,6 +428,7 @@ class SerialPanel(QFrame):
         btn_row.addWidget(self.upload_btn)
 
         self.clear_btn = QPushButton("Clear Log")
+        self.clear_btn.setToolTip("Clear this panel's log output (doesn't affect the connection).")
         self.clear_btn.clicked.connect(lambda: self.log.clear())
         btn_row.addWidget(self.clear_btn)
 
@@ -377,12 +454,21 @@ class SerialPanel(QFrame):
         self.autoscroll_cb.setChecked(True)
         self.autoscroll_cb.toggled.connect(lambda v: setattr(self.log, 'autoscroll', v))
         send_row.addWidget(self.autoscroll_cb)
+
+        self.filter_signals_cb = QCheckBox("Filter Signals")
+        self.filter_signals_cb.setToolTip(
+            "Hide signal lines ($...) and VIO commands (!...) from the log.\n"
+            "They're still routed to the Dashboard/Plotter if those are enabled."
+        )
+        self.filter_signals_cb.setChecked(False)
+        send_row.addWidget(self.filter_signals_cb)
         self.send_input = QLineEdit()
         self.send_input.setPlaceholderText("Type command to send over serial...")
         self.send_input.returnPressed.connect(self._send_command)
         self.send_input.setEnabled(False)
         send_row.addWidget(self.send_input)
         self.send_btn = QPushButton("Send")
+        self.send_btn.setToolTip("Send the typed text to the remote serial (adds newline).")
         self.send_btn.clicked.connect(self._send_command)
         self.send_btn.setEnabled(False)
         send_row.addWidget(self.send_btn)
@@ -420,18 +506,31 @@ class SerialPanel(QFrame):
         lock_mgr = getattr(self._parent_tab, "lock_manager", None)
         remote_locks = lock_mgr.cached_locks() if lock_mgr else {}
 
+        # Self-owned locks (this user, this machine) aren't hostile — we can
+        # reclaim them on re-open. Skip the "in use" annotation for those.
+        from port_lock import _my_user, _my_machine
+        mine_user = _my_user()
+        mine_machine = _my_machine()
+
         self.port_combo.clear()
         for p in all_ports:
             if (pc_name, p) in used:
                 continue  # used by another local panel
             lock = remote_locks.get((pc_name, p))
-            if lock and not lock.is_stale():
-                self.port_combo.addItem(f"{p}  (in use by {lock.display()})")
+            is_self = (lock is not None
+                       and lock.user == mine_user
+                       and lock.machine == mine_machine)
+            if lock and not lock.is_stale() and not is_self:
+                # Display text is annotated; userData holds the raw port name
+                # so _start_serial uses the clean value.
+                self.port_combo.addItem(
+                    f"{p}  (in use by {lock.display()})", userData=p
+                )
                 # Disable the item so user can't select it
                 idx = self.port_combo.count() - 1
                 self.port_combo.model().item(idx).setEnabled(False)
             else:
-                self.port_combo.addItem(p)
+                self.port_combo.addItem(p, userData=p)
 
     def refresh_ports(self):
         self._on_board_changed(None)
@@ -447,9 +546,23 @@ class SerialPanel(QFrame):
 
     _lock_result = Signal(bool, str)  # success, owner
 
+    def _current_port(self) -> str:
+        """Return the bare COM port name, stripping any '(in use by ...)'
+        annotation that might be on the display text. Prefers userData
+        (set by _on_board_changed); falls back to the first whitespace token
+        of the display text if userData is missing for some reason."""
+        data = self.port_combo.currentData()
+        if data:
+            return str(data)
+        text = self.port_combo.currentText().strip()
+        if not text:
+            return ""
+        # Split on first whitespace — "COM25  (in use by ...)" -> "COM25"
+        return text.split(None, 1)[0]
+
     def _start_serial(self):
         pc = self._get_pc_cfg()
-        port = self.port_combo.currentText()
+        port = self._current_port()
         if not port:
             return
 
@@ -467,7 +580,7 @@ class SerialPanel(QFrame):
 
     def _on_lock_result(self, success: bool, owner: str):
         if not success:
-            port = self.port_combo.currentText()
+            port = self._current_port()
             self.log.append_log(f"[Serial] {port} is in use by {owner}")
             QMessageBox.warning(
                 self, "Port In Use",
@@ -479,7 +592,7 @@ class SerialPanel(QFrame):
 
         # Lock acquired — proceed with connection
         pc = self._get_pc_cfg()
-        port = self.port_combo.currentText()
+        port = self._current_port()
         baud = self.baudrate.currentText()
         remote_dir = self.remote_dir.text().strip()
         self._connected_port_key = (self.pc_combo.currentText(), port)
@@ -488,7 +601,8 @@ class SerialPanel(QFrame):
         self.send_input.setEnabled(True)
         self.send_btn.setEnabled(True)
         self.vio_panel.setEnabled(True)
-        self.feed_cb.setEnabled(True)
+        self.feed_dash_cb.setEnabled(True)
+        self.feed_plot_cb.setEnabled(True)
         self.pc_combo.setEnabled(False)
         self.board_combo.setEnabled(False)
         self.port_combo.setEnabled(False)
@@ -526,16 +640,20 @@ class SerialPanel(QFrame):
         self.serial_worker.send_data(text)
         self.send_input.clear()
 
-    def _on_feed_toggled(self, checked):
-        self.feed_toggled.emit(self, checked)
-
     def _on_serial_output(self, line):
         """Intercept serial output — parse VIO LED commands, pass rest to log."""
         # Reset idle timer on any data received
         if hasattr(self, '_idle_timer') and self._idle_timer.isActive():
             self._idle_timer.start(self.IDLE_TIMEOUT_MS)
-        if not self.vio_panel.parse_output_line(line):
-            self.log.append_log(line)
+        if self.vio_panel.parse_output_line(line):
+            return  # VIO handled it
+        # Optionally hide signal lines ($...) from the log; they still reach
+        # the Dashboard/Plotter backends via the separate feed toggles.
+        if self.filter_signals_cb.isChecked():
+            s = line.strip()
+            if s.startswith("$") or s.startswith("!"):
+                return
+        self.log.append_log(line)
 
     def _send_vio_command(self, cmd):
         """Send a Virtual I/O command (from buttons/sliders)."""
@@ -570,9 +688,12 @@ class SerialPanel(QFrame):
         self.send_btn.setEnabled(False)
         self.vio_panel.setEnabled(False)
         self.vio_panel.reset()
-        self.feed_cb.setEnabled(False)
-        if self.feed_cb.isChecked():
-            self.feed_cb.setChecked(False)  # triggers _on_feed_toggled → disconnects backends
+        self.feed_dash_cb.setEnabled(False)
+        if self.feed_dash_cb.isChecked():
+            self.feed_dash_cb.setChecked(False)
+        self.feed_plot_cb.setEnabled(False)
+        if self.feed_plot_cb.isChecked():
+            self.feed_plot_cb.setChecked(False)
         self.pc_combo.setEnabled(True)
         self.board_combo.setEnabled(True)
         self.port_combo.setEnabled(True)
@@ -582,7 +703,7 @@ class SerialPanel(QFrame):
     def _refresh_lock(self):
         """Heartbeat: update the lock timestamp so it doesn't go stale."""
         pc = self._get_pc_cfg()
-        port = self.port_combo.currentText()
+        port = self._current_port()
         if pc and port:
             threading.Thread(
                 target=refresh_lock, args=(pc, port), daemon=True
@@ -632,7 +753,8 @@ class SerialTab(QWidget):
     """Spatial serial layout: 1=full, 2=side-by-side, 3=2+1, 4=2x2 grid."""
     MAX_PANELS = 4
     panel_count_changed = Signal(int)
-    feed_toggled = Signal(object, bool)  # (panel, checked) — bubbled from SerialPanel
+    # (panel, target, checked) where target is "dashboard" or "plotter"
+    feed_toggled = Signal(object, str, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -667,15 +789,19 @@ class SerialTab(QWidget):
         self._rebuild_layout()
         self._update_add_btn()
 
-    def _on_feed_toggled(self, panel, checked):
-        """Ensure only one panel feeds at a time, then bubble to MainWindow."""
+    def _on_feed_toggled(self, panel, target, checked):
+        """Ensure only one panel feeds a given target at a time, then bubble
+        to MainWindow. Dashboard and plotter are independent targets."""
+        attr = "feed_dash_cb" if target == "dashboard" else "feed_plot_cb"
         if checked:
             for p in self.panels:
-                if p is not panel and p.feed_cb.isChecked():
-                    p.feed_cb.blockSignals(True)
-                    p.feed_cb.setChecked(False)
-                    p.feed_cb.blockSignals(False)
-        self.feed_toggled.emit(panel, checked)
+                if p is not panel:
+                    cb = getattr(p, attr, None)
+                    if cb is not None and cb.isChecked():
+                        cb.blockSignals(True)
+                        cb.setChecked(False)
+                        cb.blockSignals(False)
+        self.feed_toggled.emit(panel, target, checked)
 
     def _remove_panel(self, panel):
         if panel in self.panels:

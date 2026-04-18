@@ -36,18 +36,24 @@ Both live in `arduino_lib/`. Copy the required `.h` and `.cpp` files into your e
 
 ## Dashboard Signal Format
 
-The `DashboardSignals` library sends named key:value pairs over serial:
+The `DashboardSignals` library sends named key:value pairs over serial,
+prefixed with `$` so the app can distinguish signal messages from ordinary
+`Serial.print` output (mirrors how VirtualIO uses `!`):
 
 ```
-speed:50.0,rpm:7200,coolantTemp:85.5,gear:8,checkEngine:0
+$speed:50.0,rpm:7200,coolantTemp:85.5,gear:8,checkEngine:0
 ```
+
+Anything without the `$` prefix is treated as normal log output and won't
+show up in the Dashboard or Plotter — so you can freely mix `Serial.println("hello")`
+with `dashSend(...)` / `dashFlush()` calls.
 
 ### How it works
 
 1. Flash the firmware and open a serial connection in the Serial tab
-2. Check **"Feed Dashboard"** on the serial panel
-3. All signals auto-appear in the **Plotter** tab as real-time graphs
-4. Signals with recognized names auto-route to the **Dashboard** gauges
+2. Enable **"Feed Dashboard"** to route signals to the HMI gauges
+3. Enable **"Feed Plotter"** (independently) to graph them over time
+4. Optionally enable **"Filter Signals"** to hide the raw `$...` lines from the terminal log
 
 ### Recognized signal names
 

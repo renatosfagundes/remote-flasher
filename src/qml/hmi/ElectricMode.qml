@@ -1,5 +1,6 @@
 // ElectricMode.qml
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import CustomControls 1.0
 
@@ -27,6 +28,7 @@ Item {
         anchors.verticalCenterOffset: 14 * s
         anchors.leftMargin: 24 * s
         active: dashboard ? dashboard.turnLeft : false
+        tooltipText: "Turn signal — left — signal: turnLeft"
         activeSvg: "assets/turn_left_active.svg"
         inactiveSvg: "assets/turn_left_inactive.svg"
         z: 5
@@ -39,6 +41,7 @@ Item {
         anchors.verticalCenterOffset: 14 * s
         anchors.rightMargin: 24 * s
         active: dashboard ? dashboard.turnRight : false
+        tooltipText: "Turn signal — right — signal: turnRight"
         activeSvg: "assets/turn_right_active.svg"
         inactiveSvg: "assets/turn_right_inactive.svg"
         z: 5
@@ -59,48 +62,56 @@ Item {
         StatusLight {
             s: root.s; iconSize: statusRow.iSize
             active: dashboard ? dashboard.parkingLights : false
+            tooltipText: "Parking lights — signal: parkingLights"
             activeSvg: "assets/Parking lights.svg"
             inactiveSvg: "assets/Parking_lights_white.svg"
         }
         StatusLight {
             s: root.s; iconSize: statusRow.iSize
             active: dashboard ? dashboard.lowBeam : false
+            tooltipText: "Low beam headlights — signal: lowBeam"
             activeSvg: "assets/Low beam headlights.svg"
             inactiveSvg: "assets/Low_beam_headlights_white.svg"
         }
         StatusLight {
             s: root.s; iconSize: statusRow.iSize
             active: dashboard ? dashboard.highBeam : false
+            tooltipText: "High beam headlights — signal: highBeam"
             activeSvg: "assets/high_beam_active.svg"
             inactiveSvg: "assets/high_beam_inactive.svg"
         }
         StatusLight {
             s: root.s; iconSize: statusRow.iSize
             active: dashboard ? dashboard.fogLights : false
+            tooltipText: "Fog lights — signal: fogLights"
             activeSvg: "assets/Rare_fog_lights_red.svg"
             inactiveSvg: "assets/Rare fog lights.svg"
         }
         StatusLight {
             s: root.s; iconSize: statusRow.iSize
             active: dashboard ? dashboard.cruiseActive : false
+            tooltipText: "Cruise control — signal: cruiseActive"
             activeSvg: "assets/cruise_control_active.svg"
             inactiveSvg: "assets/cruise_control_inactive.svg"
         }
         StatusLight {
             s: root.s; iconSize: statusRow.iSize
             active: dashboard ? dashboard.ecoMode : false
+            tooltipText: "Eco mode — signal: ecoMode"
             activeSvg: "assets/eco_active.svg"
             inactiveSvg: "assets/eco_inactive.svg"
         }
         StatusLight {
             s: root.s; iconSize: statusRow.iSize
             active: dashboard ? dashboard.evCharging : false
+            tooltipText: "EV charging — signal: evCharging"
             activeSvg: "assets/ev_charging_active.svg"
             inactiveSvg: "assets/ev_charging_inactive.svg"
         }
         StatusLight {
             s: root.s; iconSize: statusRow.iSize
             active: dashboard ? dashboard.seatbeltUnbuckled : false
+            tooltipText: "Seatbelt unbuckled — signal: seatbeltUnbuckled"
             activeSvg: "assets/FirstRightIcon.svg"
             inactiveSvg: "assets/FirstRightIcon_grey.svg"
         }
@@ -116,18 +127,19 @@ Item {
         spacing: 18 * root.s
         z: 5
 
-        WarningIcons { iconType: "engine";  iconColor: "#FF9F00"; active: dashboard ? dashboard.checkEngine : false; s: root.s * 0.9 }
-        WarningIcons { iconType: "oil";     iconColor: "#FF3B30"; active: dashboard ? dashboard.oilPressure : false; s: root.s * 0.9 }
-        WarningIcons { iconType: "battery"; iconColor: "#FF3B30"; active: dashboard ? dashboard.batteryWarn : false; s: root.s * 0.9 }
-        WarningIcons { iconType: "brake";   iconColor: "#FF3B30"; active: dashboard ? dashboard.brakeWarn   : false; s: root.s * 0.9 }
-        WarningIcons { iconType: "abs";     iconColor: "#FF9F00"; active: dashboard ? dashboard.absWarn     : false; s: root.s * 0.9 }
-        WarningIcons { iconType: "airbag";  iconColor: "#FF3B30"; active: dashboard ? dashboard.airbagWarn  : false; s: root.s * 0.9 }
+        WarningIcons { iconType: "engine"; iconColor: "#FF9F00"; active: dashboard ? dashboard.checkEngine : false; s: root.s * 0.9; tooltipText: "Check engine (MIL) — signal: checkEngine" }
+        WarningIcons { iconType: "oil"; iconColor: "#FF3B30"; active: dashboard ? dashboard.oilPressure : false; s: root.s * 0.9; tooltipText: "Oil pressure — signal: oilPressure" }
+        WarningIcons { iconType: "battery"; iconColor: "#FF3B30"; active: dashboard ? dashboard.batteryWarn : false; s: root.s * 0.9; tooltipText: "Battery warning — signal: batteryWarn" }
+        WarningIcons { iconType: "brake"; iconColor: "#FF3B30"; active: dashboard ? dashboard.brakeWarn : false; s: root.s * 0.9; tooltipText: "Brake warning — signal: brakeWarn" }
+        WarningIcons { iconType: "abs"; iconColor: "#FF9F00"; active: dashboard ? dashboard.absWarn : false; s: root.s * 0.9; tooltipText: "ABS warning — signal: absWarn" }
+        WarningIcons { iconType: "airbag"; iconColor: "#FF3B30"; active: dashboard ? dashboard.airbagWarn : false; s: root.s * 0.9; tooltipText: "Airbag / SRS — signal: airbagWarn" }
 
         // New SVG-based warnings, sized to roughly match WarningIcons
         StatusLight {
             s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.tirePressure : false
+            tooltipText: "Tire pressure (TPMS) — signal: tirePressure"
             activeSvg: "assets/tire_pressure_active.svg"
             inactiveSvg: "assets/tire_pressure_inactive.svg"
         }
@@ -135,6 +147,7 @@ Item {
             s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.doorOpen : false
+            tooltipText: "Door open — signal: doorOpen"
             activeSvg: "assets/door_open_active.svg"
             inactiveSvg: "assets/door_open_inactive.svg"
         }
@@ -142,6 +155,7 @@ Item {
             s: root.s; iconSize: 45 * root.s
             anchors.verticalCenter: parent.verticalCenter
             active: dashboard ? dashboard.serviceDue : false
+            tooltipText: "Service due — signal: serviceDue"
             activeSvg: "assets/service_active.svg"
             inactiveSvg: "assets/service_inactive.svg"
         }
@@ -199,6 +213,24 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
             }
+
+            MouseArea {
+                id: batteryHover
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.NoButton
+
+                ToolTip {
+                    parent: batteryHover
+                    x: batteryHover.mouseX + width + 15 > batteryHover.width
+                       ? batteryHover.mouseX - width - 5
+                       : batteryHover.mouseX + 15
+                    y: batteryHover.mouseY + 20
+                    visible: batteryHover.containsMouse
+                    text: "Battery state of charge — signal: battery (%)"
+                    delay: 500
+                }
+            }
         }
 
         // Speed gauge — DOMINANT centre element (fills the rest)
@@ -208,9 +240,11 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             value: dashboard ? dashboard.speed : 0
+            tooltipText: "Vehicle speed — signal: speed (km/h)"
             maximumValue: 250; labelStepSize: 50; minorTickStep: 25
             unitLabel: "km/h"; redZoneStart: -1
             odometerValue: dashboard ? dashboard.distance : 0
+            odometerTooltipText: "Odometer — signal: distance (km)"
         }
 
         // Info column — range, distance, avg speed (right side)
@@ -223,6 +257,7 @@ Item {
 
             // Range
             RowLayout {
+                id: rangeRow
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 10 * s
                 Image {
@@ -248,10 +283,18 @@ Item {
                         color: "#888"
                     }
                 }
+                HoverHandler { id: rangeHover }
+                ToolTip {
+                    parent: rangeRow
+                    visible: rangeHover.hovered
+                    text: "Estimated range — signal: rangeKm (km)"
+                    delay: 500
+                }
             }
 
             // Distance — car silhouette to differentiate from Range
             RowLayout {
+                id: distanceRow
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 10 * s
                 Image {
@@ -277,10 +320,18 @@ Item {
                         color: "#888"
                     }
                 }
+                HoverHandler { id: distanceHover }
+                ToolTip {
+                    parent: distanceRow
+                    visible: distanceHover.hovered
+                    text: "Odometer / trip distance — signal: distance (km)"
+                    delay: 500
+                }
             }
 
             // Avg speed
             RowLayout {
+                id: avgSpeedRow
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 10 * s
                 Image {
@@ -305,6 +356,13 @@ Item {
                         font.pixelSize: 12 * s; font.family: "sans-serif"
                         color: "#888"
                     }
+                }
+                HoverHandler { id: avgSpeedHover }
+                ToolTip {
+                    parent: avgSpeedRow
+                    visible: avgSpeedHover.hovered
+                    text: "Average speed — signal: avgSpeed (km/h)"
+                    delay: 500
                 }
             }
 
@@ -343,6 +401,7 @@ Item {
             height: 55 * s
             anchors.centerIn: parent
             value: dashboard ? dashboard.power : 0
+            tooltipText: "Power / regen — signal: power (kW)"
             maxPower: 150
             maxRegen: 50
         }

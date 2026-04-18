@@ -17,6 +17,14 @@ from plotter.signal_config import SignalConfig
 
 DEFAULT_CAPACITY = 50_000
 
+
+def is_signal_line(line: str) -> bool:
+    """True if `line` is a dashboard/plotter signal message ('$' prefix)
+    or a VIO command ('!' prefix). Used by the serial terminal's
+    'Filter signals' option to hide these lines from the log."""
+    s = line.strip()
+    return s.startswith("$") or s.startswith("!")
+
 # Dashboard property names that can be auto-routed from named serial signals.
 # Maps signal_name (lowercase) → bridge property name.
 _DASHBOARD_PROPS = {
@@ -108,15 +116,31 @@ class PlotterBackend(QObject):
         if 0 <= index < len(self._configs):
             self._configs[index] = cfg
 
+    # Above this many signals, newly-discovered ones start hidden to keep the
+    # plot readable — users opt in via the signal list checkbox.
+    AUTO_HIDE_THRESHOLD = 5
+
     def _get_or_create_signal(self, name: str) -> int:
-        """Return the buffer index for a signal, creating it if new."""
+        """Return the buffer index for a signal, creating it if new.
+        New signals are backfilled with zeros so their buffer aligns with
+        time_buf — the caller will then append the current value.
+        """
         if name in self._name_to_index:
             return self._name_to_index[name]
         idx = len(self._signal_names)
+        # First N signals visible, rest start hidden.
+        initial_visible = idx < self.AUTO_HIDE_THRESHOLD
         self._signal_names.append(name)
         self._name_to_index[name] = idx
-        self._channel_bufs.append(RingBuffer(DEFAULT_CAPACITY))
-        self._configs.append(SignalConfig(index=idx, name=name))
+        buf = RingBuffer(DEFAULT_CAPACITY)
+        # Backfill so new signals appear at the correct point in time rather
+        # than being misaligned with previously-recorded samples. Target:
+        # one short of time_buf.count so the caller's append brings them even.
+        target = max(0, self._time_buf.count - 1)
+        for _ in range(target):
+            buf.append(0.0)
+        self._channel_bufs.append(buf)
+        self._configs.append(SignalConfig(index=idx, name=name, visible=initial_visible))
         self.signalDiscovered.emit(name)
         self.channelCountChanged.emit(len(self._signal_names))
         return idx
@@ -135,50 +159,63 @@ class PlotterBackend(QObject):
 
     @Slot(str)
     def onSerialLine(self, line: str):
-        """Parse a serial line — named (key:value) or positional CSV."""
+        """Parse a serial line. Only lines prefixed with '$' are treated as
+        signal messages — mirrors the VIO '!' prefix convention so normal
+        Serial.print output from user code never accidentally shows up in
+        the plot/dashboard.
+        """
         stripped = line.strip()
-        if not stripped or stripped[0] in ("[", "!", ">", "#"):
+        if not stripped.startswith("$"):
+            return
+        payload = stripped[1:].strip()
+        if not payload:
             return
 
-        # Detect format: named if contains ":" with text before it
-        if ":" in stripped and not stripped[0].isdigit() and not stripped[0] == "-":
-            self._parse_named(stripped)
+        # Named format ($speed:50,rpm:7200) vs positional ($1.0,2.0,3.0).
+        if ":" in payload and not payload[0].isdigit() and payload[0] != "-":
+            self._parse_named(payload)
         else:
-            self._parse_csv(stripped)
+            self._parse_csv(payload)
 
     def _parse_named(self, line: str):
         """Parse key:value,key:value format."""
-        now = time.perf_counter()
-        if self._t0 is None:
-            self._t0 = now
-        self._time_buf.append(now - self._t0)
-
-        # Pad all existing buffers with their last value (hold) so arrays
-        # stay aligned even if a signal is missing from this line.
-        for buf in self._channel_bufs:
-            arr = buf.get_last(1)
-            buf.append(arr[0] if len(arr) > 0 else 0.0)
-
-        pairs = line.split(",")
-        for pair in pairs:
+        # Pre-parse all pairs (cheap) before touching any buffer, so we know
+        # which signals are updated this tick and can handle new ones cleanly.
+        updates: dict[str, float] = {}
+        for pair in line.split(","):
             pair = pair.strip()
             if ":" not in pair:
                 continue
             key, val_str = pair.split(":", 1)
             key = key.strip()
-            val_str = val_str.strip()
             try:
-                value = float(val_str)
+                updates[key] = float(val_str.strip())
             except ValueError:
                 continue
 
-            idx = self._get_or_create_signal(key)
-            # Overwrite the hold value with the actual value
-            buf = self._channel_bufs[idx]
-            # Replace the last appended hold value
-            buf._buf[(buf._head - 1) % buf._capacity] = value
+        if not updates:
+            return
 
-            self._route_to_dashboard(key, value)
+        now = time.perf_counter()
+        if self._t0 is None:
+            self._t0 = now
+        self._time_buf.append(now - self._t0)
+
+        # Create new signals first (they'll be backfilled to align with time_buf).
+        for name in updates:
+            self._get_or_create_signal(name)
+
+        # Append one value per channel — updated ones get the new value, the
+        # rest get their last value held. Invariant: every channel_buf.count
+        # equals time_buf.count after this method returns.
+        for i, buf in enumerate(self._channel_bufs):
+            name = self._signal_names[i]
+            if name in updates:
+                buf.append(updates[name])
+                self._route_to_dashboard(name, updates[name])
+            else:
+                arr = buf.get_last(1)
+                buf.append(arr[0] if len(arr) > 0 else 0.0)
 
         self._dirty = True
 

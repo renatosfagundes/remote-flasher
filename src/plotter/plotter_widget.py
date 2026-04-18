@@ -1,7 +1,7 @@
 """Real-time scrolling plot widget using pyqtgraph."""
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 from plotter.plotter_backend import PlotterBackend
@@ -15,12 +15,36 @@ pg.setConfigOptions(
 )
 
 
+class ClickableLegendItem(pg.LegendItem):
+    """LegendItem whose entries emit a signal when clicked."""
+    # (curve, label_text) — caught by PlotterWidget to toggle visibility.
+    sampleClicked = Signal(object, str)
+
+    def mousePressEvent(self, ev):
+        # Determine which legend entry the click hit by walking the layout.
+        for sample, label in self.items:
+            # sample.sceneBoundingRect() includes the color swatch;
+            # label covers the text. Either is a valid hit target.
+            rect = sample.sceneBoundingRect().united(label.sceneBoundingRect())
+            if rect.contains(ev.scenePos()):
+                # `sample.item` is the curve (PlotDataItem) associated with
+                # this legend entry — pyqtgraph stores it there.
+                curve = getattr(sample, "item", None)
+                self.sampleClicked.emit(curve, label.text)
+                ev.accept()
+                return
+        super().mousePressEvent(ev)
+
+
 class PlotterWidget(QWidget):
     """pyqtgraph-based real-time scrolling plot.
 
     Refreshes at 30 fps. Each visible signal gets its own PlotDataItem
     curve, updated from the backend's ring buffers with scale+offset applied.
     """
+    # Emitted when the user clicks a legend entry — so the SignalListWidget
+    # can sync its visibility checkbox for that signal.
+    signalVisibilityToggled = Signal(int, bool)  # (index, visible)
 
     def __init__(self, backend: PlotterBackend, parent=None):
         super().__init__(parent)
@@ -46,13 +70,16 @@ class PlotterWidget(QWidget):
             plot_item.getAxis(side).setStyle(showValues=True)
 
         # Legend — auto-populated from each curve's `name`. Semi-transparent
-        # background so it doesn't hide data.
-        self._legend = plot_item.addLegend(
+        # background so it doesn't hide data. Click an entry to hide/show
+        # the curve (and keep the side-panel checkbox in sync).
+        self._legend = ClickableLegendItem(
             offset=(-10, 10),
             brush=pg.mkBrush("#00000099"),
             pen=pg.mkPen("#555"),
             labelTextColor="#dddddd",
         )
+        self._legend.setParentItem(plot_item.vb)
+        self._legend.sampleClicked.connect(self._on_legend_clicked)
 
         # Crosshair for hover
         self._vline = pg.InfiniteLine(
@@ -112,6 +139,19 @@ class PlotterWidget(QWidget):
         to_remove = [i for i in self._curves if i >= count]
         for i in to_remove:
             self._plot_widget.removeItem(self._curves.pop(i))
+
+    def _on_legend_clicked(self, curve, label_text):
+        """Legend entry clicked — toggle that curve's visibility."""
+        # Find which config index this curve belongs to.
+        for idx, c in self._curves.items():
+            if c is curve:
+                configs = self._backend.configs
+                if idx < len(configs):
+                    configs[idx].visible = not configs[idx].visible
+                    self._backend.update_config(idx, configs[idx])
+                    self.update_curve_style(idx)
+                    self.signalVisibilityToggled.emit(idx, configs[idx].visible)
+                return
 
     def update_curve_style(self, index: int):
         """Update a curve's pen color, visibility, and legend entry from config."""

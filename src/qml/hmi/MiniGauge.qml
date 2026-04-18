@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 
 Item {
     id: root
@@ -11,6 +12,7 @@ Item {
     property real dangerAbove: -1
     property real dangerBelow: -1
     property real s: 1.0
+    property string tooltipText: ""  // Set to show a tooltip on hover
 
     implicitWidth: 160 * s
     implicitHeight: 320 * s
@@ -181,5 +183,23 @@ Item {
         text: root.label === "TEMP" ? "H" : "F"
         color: (isLeft && value >= dangerAbove && dangerAbove > 0) ? "#FF3B3B" : "white"
         font.pixelSize: 18 * s; font.bold: true
+    }
+
+    MouseArea {
+        id: hover
+        anchors.fill: parent
+        hoverEnabled: root.tooltipText !== ""
+        acceptedButtons: Qt.NoButton
+
+        ToolTip {
+            parent: hover
+            x: hover.mouseX + width + 15 > hover.width
+               ? hover.mouseX - width - 5
+               : hover.mouseX + 15
+            y: hover.mouseY + 20
+            visible: hover.containsMouse && root.tooltipText !== ""
+            text: root.tooltipText
+            delay: 500
+        }
     }
 }

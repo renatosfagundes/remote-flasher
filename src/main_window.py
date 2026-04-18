@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"Remote Firmware Flasher v{__version__} — UFPE Lab")
-        self.setMinimumSize(1100, 700)
+        self.setMinimumSize(1320, 700)
 
         icon_path = os.path.join(getattr(sys, '_MEIPASS', APP_DIR), "assets", "icon.ico")
         if os.path.exists(icon_path):
@@ -224,33 +224,54 @@ class MainWindow(QMainWindow):
     # Dashboard source management
     # ------------------------------------------------------------------
 
-    def _on_feed_toggled(self, panel, checked):
-        """Connect/disconnect a serial panel's output to plotter + dashboard."""
-        backend = self.plotter_tab.backend
+    def _on_feed_toggled(self, panel, target, checked):
+        """Connect/disconnect a serial panel's output to either the dashboard
+        or the plotter. Dashboard and plotter are independent — a panel can
+        feed both, just one, or neither.
+        """
+        if target == "dashboard":
+            attr = "_dashboard_source_panel"
+            slot = self.dashboard_backend.onSerialLine
+        else:  # "plotter"
+            attr = "_plotter_source_panel"
+            slot = self.plotter_tab.backend.onSerialLine
 
-        # Disconnect previous feed panel
-        if self._feed_panel is not None:
-            worker = getattr(self._feed_panel, "serial_worker", None)
+        # Disconnect previous source for this target
+        prev = getattr(self, attr, None)
+        if prev is not None:
+            worker = getattr(prev, "serial_worker", None)
             if worker is not None:
                 try:
-                    worker.output.disconnect(backend.onSerialLine)
+                    worker.output.disconnect(slot)
                 except RuntimeError:
                     pass
-            self._feed_panel = None
+            setattr(self, attr, None)
 
         if not checked:
             return
 
-        # Connect new feed panel
+        # Connect new source
         worker = getattr(panel, "serial_worker", None)
         if worker is not None:
-            worker.output.connect(backend.onSerialLine)
-            self._feed_panel = panel
+            worker.output.connect(slot)
+            setattr(self, attr, panel)
 
     def closeEvent(self, event):
         # Stop all active serial connections before closing
         for panel in self.serial_tab.panels:
             panel.cleanup()
+        # Wait briefly for any background workers (flash, SSH, locks) so Qt
+        # doesn't print "QThread: Destroyed while thread '' is still running".
+        for tab in (self.flash_tab, self.can_tab, self.ssh_tab):
+            workers = list(getattr(tab, "_workers", []))
+            for worker in workers:
+                try:
+                    # worker may have been deleteLater'd — shiboken will raise
+                    # on any method call if its C++ twin is already gone.
+                    if worker.isRunning():
+                        worker.wait(2000)
+                except (RuntimeError, Exception):
+                    pass
         self.dashboard_backend.stopLogging()
         if self.vpn_tab._connected:
             msg = QMessageBox(self)
@@ -301,4 +322,8 @@ class MainWindow(QMainWindow):
             QPushButton:hover { background: #1565c0; }
             QPushButton:pressed { background: #0a3a7e; }
             QStatusBar { color: #aaa; background: #252525; }
+            QToolTip {
+                background: #1e1e1e; color: #fff;
+                border: 1px solid #555; padding: 4px;
+            }
         """)

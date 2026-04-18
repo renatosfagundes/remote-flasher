@@ -65,6 +65,11 @@ void dashSendBool(const char* name, bool value) {
 void dashFlush(void) {
     if (_count == 0) return;
 
+    // '$' prefix marks this line as a dashboard/plotter signal message —
+    // mirrors VIO's '!' prefix convention so the GUI can distinguish signal
+    // lines from ordinary Serial.print output (and filter them if desired).
+    Serial.print('$');
+
     for (uint8_t i = 0; i < _count; i++) {
         if (i > 0) Serial.print(',');
         Serial.print(_buf[i].name);

@@ -7,9 +7,19 @@ Usage:
     python serialterm.py --port COM25 --baudrate 115200
 """
 import argparse
+import io
 import sys
 import threading
 import serial
+
+
+# Force UTF-8 output so non-ASCII characters from the Arduino (e.g. em-dash,
+# degree signs, accented text) don't crash the reader on Windows hosts that
+# default to cp1252 stdout.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except AttributeError:  # pre-3.7 fallback
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 def _reader(ser):
@@ -22,7 +32,12 @@ def _reader(ser):
                     text = data.decode("utf-8", errors="replace").rstrip("\r\n")
                 except Exception:
                     text = repr(data)
-                print(text)
+                # errors="replace" on stdout protects us even if a weird byte
+                # slips through — '?' is better than a traceback.
+                try:
+                    print(text)
+                except UnicodeEncodeError:
+                    print(text.encode("ascii", errors="replace").decode("ascii"))
                 sys.stdout.flush()
     except (serial.SerialException, OSError):
         pass

@@ -199,3 +199,16 @@ class SignalListWidget(QWidget):
 
     def _on_row_changed(self, index: int, cfg: SignalConfig):
         self.config_changed.emit(index, cfg)
+
+    def set_visibility(self, index: int, visible: bool):
+        """Update the visibility checkbox for a signal without emitting.
+
+        Called when the user toggles visibility via the plot legend — we
+        sync the checkbox without triggering config_changed (the legend
+        click already updated the backend directly).
+        """
+        if 0 <= index < len(self._rows):
+            row = self._rows[index]
+            row._vis_cb.blockSignals(True)
+            row._vis_cb.setChecked(visible)
+            row._vis_cb.blockSignals(False)

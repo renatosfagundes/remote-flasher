@@ -33,6 +33,11 @@ class FlashTab(QWidget):
         # reboot floods avrdude with stk500_cmd() out-of-sync errors).
         # Keyed by (pc_key, com_port); released when the owning op finishes.
         self._busy_ports: set[tuple[str, str]] = set()
+
+        # Dark background — the tab itself has no explicit background in the
+        # global stylesheet, which leaves a white strip between child widgets.
+        self.setStyleSheet("FlashTab { background: #2b2b2b; }")
+
         layout = QVBoxLayout(self)
 
         ctrl = QGroupBox("Firmware Flash")
@@ -200,7 +205,9 @@ class FlashTab(QWidget):
         if not pc_info:
             return
         worker = LockReleaseWorker(pc_info, ports)
-        worker.finished_signal.connect(worker.deleteLater)
+        # Don't auto-deleteLater — Python `_workers` list keeps a reference.
+        # Letting Qt delete the C++ object while Python still holds a
+        # wrapper causes shiboken "already deleted" errors on later access.
         self._workers.append(worker)
         worker.start()
 

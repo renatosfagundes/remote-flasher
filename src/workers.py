@@ -367,21 +367,26 @@ class LockAcquireWorker(QThread):
         self.ports = [p for p in ports if p]
 
     def run(self):
-        from port_lock import acquire_lock, release_lock
-        acquired = []
-        conflicts = []
-        for port in self.ports:
-            ok, owner = acquire_lock(self.pc_info, port)
-            if ok:
-                acquired.append(port)
+        try:
+            from port_lock import acquire_lock, release_lock
+            acquired = []
+            conflicts = []
+            for port in self.ports:
+                ok, owner = acquire_lock(self.pc_info, port)
+                if ok:
+                    acquired.append(port)
+                else:
+                    conflicts.append((port, owner))
+                    break  # no point trying the rest
+            if conflicts:
+                for port in acquired:
+                    release_lock(self.pc_info, port)
+                self.finished_signal.emit(False, conflicts)
             else:
-                conflicts.append((port, owner))
-                break  # no point trying the rest
-        if conflicts:
-            for port in acquired:
-                release_lock(self.pc_info, port)
-            self.finished_signal.emit(False, conflicts)
-        else:
+                self.finished_signal.emit(True, [])
+        except Exception as e:
+            # Never let a lock-worker crash take down the app — fail open.
+            self.output.emit(f"[Lock] Worker error: {e}")
             self.finished_signal.emit(True, [])
 
 
@@ -395,10 +400,14 @@ class LockReleaseWorker(QThread):
         self.ports = [p for p in ports if p]
 
     def run(self):
-        from port_lock import release_lock
-        for port in self.ports:
-            release_lock(self.pc_info, port)
-        self.finished_signal.emit()
+        try:
+            from port_lock import release_lock
+            for port in self.ports:
+                release_lock(self.pc_info, port)
+        except Exception:
+            pass  # best-effort — stale locks will be cleaned up by pollers
+        finally:
+            self.finished_signal.emit()
 
 
 class CameraWorker(QThread):
