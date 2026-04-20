@@ -1,5 +1,5 @@
 % ============================================================
-%  Manual do Usuário — Remote Firmware Flasher v2.2.0
+%  Manual do Usuário — Remote Firmware Flasher v2.3.0
 %  Compilar com: tectonic manual.tex
 % ============================================================
 \documentclass[12pt,a4paper]{article}
@@ -994,6 +994,10 @@ A pasta \texttt{examples/} do repositório contém projetos prontos para compila
   11 & \texttt{dashboard\_warnings} & Luzes de aviso, indicadores de status, setas \\
   12 & \texttt{dashboard\_doors} & Portas interativas via VirtualIO + Dashboard \\
   13 & \texttt{dashboard\_full} & Simulação completa de veículo (3 tasks em diferentes taxas) \\
+  14 & \texttt{odo\_avgspeed\_test} & Verificação dos sinais \texttt{distance} e \texttt{avgSpeed} com patamares de velocidade e EMA visível \\
+  \midrule
+  15 & \texttt{plotter\_waveforms} & Seno / triângulo / quadrada / dente-de-serra em nomes de sinais customizados --- demo genérica do Plotter \\
+  16 & \texttt{plotter\_step\_response} & Entrada em degrau + 3 EMAs com $\tau$ distintos --- projetado para os cursores de medição \\
   \bottomrule
 \end{tabularx}
 \end{center}
@@ -1001,7 +1005,7 @@ A pasta \texttt{examples/} do repositório contém projetos prontos para compila
 \textbf{Bibliotecas necessárias:} Copie os arquivos \texttt{.h/.cpp} da pasta \texttt{arduino\_lib/} para o diretório do exemplo:
 \begin{itemize}[nosep]
   \item \textbf{VirtualIO}: \texttt{VirtualIO.h}, \texttt{VirtualIO.cpp} (ex.~06, 12)
-  \item \textbf{DashboardSignals}: \texttt{DashboardSignals.h}, \texttt{DashboardSignals.cpp} (ex.~09--13)
+  \item \textbf{DashboardSignals}: \texttt{DashboardSignals.h}, \texttt{DashboardSignals.cpp} (ex.~09--16)
 \end{itemize}
 Adicione cada \texttt{.cpp} como \texttt{APP\_SRC} no arquivo \texttt{.oil}.
 
@@ -1620,10 +1624,27 @@ A aba \textbf{Plotter} exibe gráficos de todos os sinais recebidos via serial e
   \item \textbf{Configuração por sinal}: cor, escala vertical, offset, visibilidade (checkbox)
   \item \textbf{Janela deslizante}: 5s, 10s, 30s, 60s ou 120s
   \item \textbf{Pause/Resume}: congela a visualização sem perder dados
-  \item \textbf{Hover}: cursor mostra os valores de todos os sinais visíveis no ponto
+  \item \textbf{Hover}: cursor mostra os valores de todos os sinais visíveis no ponto, atualizando continuamente mesmo com o mouse parado enquanto o gráfico rola
+  \item \textbf{Legenda clicável}: clique em uma entrada da legenda para mostrar/ocultar a curva correspondente
   \item \textbf{Export CSV}: salva todos os dados bufferizados em arquivo
   \item \textbf{Zoom/Pan}: scroll do mouse para zoom, arrastar para pan
 \end{itemize}
+
+\subsection{Controles de medição (v2.3.0)}
+
+Os controles da barra de ferramentas (à direita dos botões padrão) permitem medir transientes e trechos específicos do sinal sem pausar a aquisição:
+
+\begin{itemize}[nosep]
+  \item \textbf{Cursors}: ativa um par de cursores arrastáveis que \emph{acompanham} a janela rolante (são armazenados como ``N segundos atrás da borda viva''). Use para medir, por exemplo, a constante de tempo de uma EMA ou o intervalo entre eventos.
+  \item \textbf{Auto-Y}: ajusta o eixo Y uma única vez aos dados atualmente visíveis. Útil quando um sinal fica fora do intervalo após mudar de escala.
+  \item \textbf{Reset View}: retoma a rolagem do X e refaz o Auto-Y.
+  \item \textbf{Stats}: alterna o painel lateral de estatísticas. Quando \textbf{Cursors} está desligado, mostra min/máx/média/desvio/Δ da janela visível; quando está ligado, mostra os mesmos valores calculados \emph{entre os cursores} junto com o Δt.
+  \item \textbf{Indicador de taxa (Hz)}: à direita da barra. Mostra a taxa efetiva de amostragem (amostras/segundo na janela dos últimos 2\,s), útil para verificar se o firmware está atingindo o período da task.
+\end{itemize}
+
+\begin{dicabox}[Medindo atraso de EMA]
+Para verificar o atraso visível do \texttt{avgSpeed} em relação ao \texttt{speed} (exemplo 14): ative \textbf{Cursors}, posicione o cursor esquerdo no degrau de subida de \texttt{speed} e o direito onde \texttt{avgSpeed} atinge o novo patamar. O painel \textbf{Stats} mostra o Δt diretamente.
+\end{dicabox>
 
 \subsection{Formato dos dados seriais}
 

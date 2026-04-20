@@ -242,7 +242,8 @@ Item {
             value: dashboard ? dashboard.speed : 0
             tooltipText: "Vehicle speed — signal: speed (km/h)"
             maximumValue: 250; labelStepSize: 50; minorTickStep: 25
-            unitLabel: "km/h"; redZoneStart: -1
+            // Red zone at 80% of max, fade from 70% → 80%.
+            unitLabel: "km/h"; redZoneStart: 200; redFadeRange: 25
             odometerValue: dashboard ? dashboard.distance : 0
             odometerTooltipText: "Odometer — signal: distance (km)"
         }

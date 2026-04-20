@@ -15,7 +15,6 @@ from lab_config import COMPUTERS
 from settings import APP_DIR
 from workers import CameraWorker
 from dashboard_backend import DashboardBackend
-from port_lock import PortLockManager
 from tabs import (
     VPNTab, FlashTab, CANTab, SerialTab, SSHTerminalTab, SetupTab,
     GaugesTab, HMIDashboardTab, PlotterTab,
@@ -141,19 +140,13 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self.main_splitter)
 
-        # Port lock manager — polls lock files on lab PCs, enabled only when VPN is up
-        self.lock_manager = PortLockManager(self)
-        self.serial_tab.lock_manager = self.lock_manager
-        self.lock_manager.locks_changed.connect(self._on_locks_changed)
-        self.vpn_tab.vpn_status_changed.connect(self.lock_manager.set_enabled)
-
         self.serial_tab.panel_count_changed.connect(self._on_serial_panel_count)
         self.flash_tab.ports_synced.connect(self._on_ports_synced)
 
-        # Plotter backend gets the dashboard bridge for auto-routing named signals
-        self.plotter_tab.backend.set_dashboard_bridge(
-            self.gauges_tab._bridge if hasattr(self.gauges_tab, '_bridge') else None
-        )
+        # Only the dashboard_backend owns the HMI bridge — Feed Dashboard is
+        # the sole path to the gauges. Feed Plotter only fills the plotter.
+        _bridge = self.gauges_tab._bridge if hasattr(self.gauges_tab, '_bridge') else None
+        self.dashboard_backend.set_dashboard_bridge(_bridge)
         self._feed_panel = None  # the serial panel currently feeding dashboard/plotter
         self.serial_tab.feed_toggled.connect(self._on_feed_toggled)
 
@@ -195,12 +188,6 @@ class MainWindow(QMainWindow):
             panel_handler = getattr(panel, "_on_pc_changed", None)
             if callable(panel_handler):
                 panel_handler(panel.pc_combo.currentText())
-
-    def _on_locks_changed(self):
-        """Refresh port dropdowns when remote lock state changes."""
-        for panel in getattr(self.serial_tab, "panels", []):
-            if panel.serial_worker is None:  # only refresh idle panels
-                panel._on_board_changed(None)
 
     def _on_serial_panel_count(self, count):
         if self.tabs.currentWidget() is not self.serial_tab:
@@ -277,10 +264,14 @@ class MainWindow(QMainWindow):
             msg = QMessageBox(self)
             msg.setWindowTitle("VPN Connected")
             msg.setText("The VPN is still connected. What would you like to do?")
+            # Put RejectRole on Cancel so the dialog's X and Esc map to
+            # "don't close the main window" (Qt routes window-close to the
+            # RejectRole button). The two "close" buttons are both AcceptRole.
             disconnect_btn = msg.addButton("Disconnect && Close", QMessageBox.AcceptRole)
-            keep_btn = msg.addButton("Keep VPN && Close", QMessageBox.RejectRole)
-            cancel_btn = msg.addButton("Cancel", QMessageBox.DestructiveRole)
+            keep_btn = msg.addButton("Keep VPN && Close", QMessageBox.AcceptRole)
+            cancel_btn = msg.addButton("Cancel", QMessageBox.RejectRole)
             msg.setDefaultButton(cancel_btn)
+            msg.setEscapeButton(cancel_btn)
             msg.exec()
 
             clicked = msg.clickedButton()
@@ -326,4 +317,9 @@ class MainWindow(QMainWindow):
                 background: #1e1e1e; color: #fff;
                 border: 1px solid #555; padding: 4px;
             }
+            /* QMessageBox renders on a white system background — force dark
+               body text, otherwise the QLabel rule above paints it #ccc and
+               it gets unreadable against the light dialog. */
+            QMessageBox { background: #f0f0f0; }
+            QMessageBox QLabel { color: #202020; }
         """)

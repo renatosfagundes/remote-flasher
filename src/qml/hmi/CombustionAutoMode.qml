@@ -136,7 +136,8 @@ Item {
             value: dashboard ? dashboard.rpm : 0
             tooltipText: "Engine RPM — signal: rpm"
             maximumValue: 8000; labelStepSize: 2000; minorTickStep: 1000
-            unitLabel: "x1000"; accentColor: "#3498db"; redZoneStart: 6500
+            // Red zone at 80% of max (6400), fade from 70% (5600) → 80%.
+            unitLabel: "x1000"; accentColor: "#3498db"; redZoneStart: 6400; redFadeRange: 800
             // Display value as e.g. "1.0" rather than "1023" so the centre
             // text doesn't overlap the gauge ticks.
             displayDivisor: 1000; decimals: 1
@@ -233,7 +234,8 @@ Item {
             value: dashboard ? dashboard.speed : 0
             tooltipText: "Vehicle speed — signal: speed (km/h)"
             maximumValue: 220; labelStepSize: 40; minorTickStep: 20
-            unitLabel: "km/h"; accentColor: "#01E6DE"; redZoneStart: -1
+            // Red zone at 80% of max, fade from 70% → 80%.
+            unitLabel: "km/h"; accentColor: "#01E6DE"; redZoneStart: 176; redFadeRange: 22
             odometerValue: dashboard ? dashboard.distance : 0
             odometerTooltipText: "Odometer — signal: distance (km)"
         }

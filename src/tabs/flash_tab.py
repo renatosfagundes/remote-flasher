@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 from lab_config import COMPUTERS, AVRDUDE_DEFAULTS, REMOTE_BASE_DIR, REMOTE_SCRIPTS_DIR
 from settings import get_remote_user_dir
 from widgets import LogWidget, make_log_with_clear
-from workers import SSHWorker, SCPWorker, PortsFetchWorker, LockAcquireWorker, LockReleaseWorker
+from workers import SSHWorker, SCPWorker, PortsFetchWorker
 from ports_sync import apply_overrides, save_cache, REMOTE_PORTS_PATH
 
 
@@ -119,6 +119,25 @@ class FlashTab(QWidget):
         self.flash_all_btn.clicked.connect(self._do_all)
         btn_row.addWidget(self.flash_all_btn)
 
+        # Cancel — only enabled during the avrdude phase. Reset is a brief
+        # CAN pulse; interrupting it mid-pulse could leave the ECU in a bad
+        # state, so we don't expose Cancel for reset.
+        self.cancel_btn = QPushButton("Cancel Flash")
+        self.cancel_btn.setStyleSheet(
+            "QPushButton { background-color: #8b0000; color: white; font-weight: bold; }"
+            "QPushButton:disabled { background-color: #3a1a1a; color: #777; }"
+        )
+        self.cancel_btn.setToolTip(
+            "Abort the running avrdude process (kills only the avrdude bound to\n"
+            "this ECU port, leaves other students' work untouched).\n"
+            "Only available while avrdude is actually running."
+        )
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.clicked.connect(self._cancel_flash)
+        btn_row.addWidget(self.cancel_btn)
+        self._flash_worker = None  # current avrdude SSHWorker (None when idle)
+        self._flash_cancelled = False  # set by _cancel_flash; read in _on_flash_done
+
         g.addLayout(btn_row, 5, 0, 1, 2)
         layout.addWidget(ctrl)
 
@@ -160,56 +179,21 @@ class FlashTab(QWidget):
             self._busy_ports.discard((pc_key, p))
 
     def _acquire_remote_locks(self, op_id, label, pc_key, pc_info, ports, on_success):
-        """Acquire cross-user SFTP locks on the remote PC, async.
+        """Historical cross-user SFTP lock step — now a pass-through.
 
-        Local locks are assumed already held. On success, invokes on_success()
-        on the Qt thread. On conflict, releases the local locks (since the op
-        can't proceed) and shows the user who holds the remote locks.
+        The SFTP lock layer was removed (it caused more problems than it
+        solved — stale locks, SSH/SFTP churn that tripped the camera's
+        capture watchdog). Local `_busy_ports` still guards against
+        same-app Flash-vs-Reset racing on the same port. This wrapper is
+        kept so callers don't all have to be rewritten at once; it just
+        invokes on_success() synchronously.
         """
-        ports = [p for p in ports if p]
-        if not ports:
-            on_success()
-            return
-        self._log(op_id, f"[{label}] Acquiring remote lock for {', '.join(ports)}...")
-        worker = LockAcquireWorker(pc_info, ports)
-        worker.finished_signal.connect(
-            lambda ok, conflicts, op=op_id, lbl=label, pk=pc_key, ps=ports:
-                self._on_remote_locks_acquired(ok, conflicts, op, lbl, pk, ps, on_success)
-        )
-        self._workers.append(worker)
-        worker.start()
-
-    def _on_remote_locks_acquired(self, ok, conflicts, op_id, label, pc_key, ports, on_success):
-        if ok:
-            on_success()
-            return
-        # Conflict — back out the local reservation so the user can try again.
-        self._release_local_ports(pc_key, ports)
-        owners = "\n".join(f"  {p}: {o}" for p, o in conflicts)
-        QMessageBox.warning(
-            self, "Port In Use (Another User)",
-            f"Can't start {label.lower()} on {pc_key} — in use by:\n\n{owners}\n\n"
-            "Wait for them to finish or coordinate on who goes next.",
-            QMessageBox.Ok,
-        )
-        conflict_list = ", ".join(f"{p} ({o})" for p, o in conflicts)
-        self._log(op_id, f"[{label}] Aborted — remote port held by: {conflict_list}.")
+        on_success()
 
     def _release_all_ports(self, pc_key: str, ports):
-        """Release both in-process and cross-user locks. Remote release is async."""
+        """Release the in-process port reservation (no remote lock to free)."""
         ports = [p for p in ports if p]
         self._release_local_ports(pc_key, ports)
-        if not ports:
-            return
-        pc_info = COMPUTERS.get(pc_key)
-        if not pc_info:
-            return
-        worker = LockReleaseWorker(pc_info, ports)
-        # Don't auto-deleteLater — Python `_workers` list keeps a reference.
-        # Letting Qt delete the C++ object while Python still holds a
-        # wrapper causes shiboken "already deleted" errors on later access.
-        self._workers.append(worker)
-        worker.start()
 
     def _get_pc_cfg(self):
         return COMPUTERS.get(self.pc_combo.currentText(), {})
@@ -332,9 +316,19 @@ class FlashTab(QWidget):
             lambda s, op=op, pk=pc_key, rp=reset_port: self._on_reset_done(s, op, pk, rp)
         )
         self._workers.append(worker)
+        # Reset is just a short CAN AT-command pulse — safe to cancel. Track
+        # it as the cancellable worker; no write-phase monitoring needed here.
+        self._flash_worker = worker
+        self._flash_pc = pc
+        self._flash_port = reset_port
+        self.cancel_btn.setEnabled(True)
         worker.start()
 
     def _on_reset_done(self, status, op_id, pc_key, reset_port):
+        self._flash_worker = None
+        # Leave Cancel disabled until the next op starts (avoid flicker when
+        # reset → flash chains).
+        self.cancel_btn.setEnabled(False)
         self._log(op_id, f"[Reset] Exit status: {status}")
         self._release_all_ports(pc_key, [reset_port])
 
@@ -439,6 +433,21 @@ class FlashTab(QWidget):
                 self._release_all_ports(*release_ports)
             return
 
+        self._launch_flash_worker(op_id, pc, ecu_port, remote_dir, hex_name,
+                                  board, release_ports)
+
+    def _launch_flash_worker(self, op_id, pc, ecu_port, remote_dir, hex_name,
+                             board, release_ports):
+        # For PCs using the flash.py method, keep the remote copy of
+        # flash.py in sync with our local bundle — size-compared so an
+        # unchanged file is a cheap stat+skip. Without this the remote
+        # can run a stale flash.py (e.g. without the avrdude kill-timeout)
+        # and hang forever on a bad sync.
+        if pc.get("flash_method") == "flash.py":
+            try:
+                self._sftp_upload_flash_py(pc)
+            except Exception as e:
+                self._log(op_id, f"[Flash] Could not refresh flash.py ({e}); using existing copy.")
         if pc.get("flash_method") == "flash.py":
             reset_port = board.get("reset_port", "")
             # -u = unbuffered so flash.py's prints stream in real time
@@ -446,32 +455,168 @@ class FlashTab(QWidget):
                    f' & python -u {REMOTE_BASE_DIR}\\flash.py --reset_port {reset_port}'
                    f' --flash_port {ecu_port} --hex {hex_name} --delay 0.4')
         else:
-            cmd = (f'cd {remote_dir} && copy {REMOTE_SCRIPTS_DIR}\\avrdude.conf . >nul 2>&1'
-                   f' & avrdude.exe -C avrdude.conf -v'
-                   f' -p {AVRDUDE_DEFAULTS["mcu"]} -c {AVRDUDE_DEFAULTS["programmer"]}'
-                   f' -b {AVRDUDE_DEFAULTS["baudrate"]} -P {ecu_port}'
-                   f' -U flash:w:{hex_name}:i')
+            # Critical: combine pre-kill + reset + avrdude into ONE SSH exec.
+            # The Uno bootloader only listens for ~1-2 s after reset, and a
+            # separate SSH session between reset and avrdude burns 2-3 s on
+            # connect/auth — by the time avrdude talks to the board, the
+            # bootloader has already handed off to user code and sync fails.
+            # Chaining with cmd.exe's `&` keeps the gap under 100 ms.
+            reset_port = board.get("reset_port", "")
+            reset_script = board.get("reset_script", "")
+            # Use PowerShell + Stop-Process instead of `wmic ... delete`.
+            # wmic's Terminate() can fail silently on avrdude instances
+            # stuck in a kernel I/O wait on the FTDI driver (the exact
+            # state that leaves ports held after a failed flash). The -Force
+            # on Stop-Process delivers the same signal but surfaces errors
+            # and handles more cases. Still port-scoped — only matches
+            # avrdudes/serialterms for THIS ECU port.
+            pre_kill = (
+                f'powershell -NoProfile -Command '
+                f'"Get-CimInstance Win32_Process | Where-Object {{'
+                f'$_.CommandLine -match \'-P\\s+{ecu_port}\\s+-U\' -or '
+                f'$_.CommandLine -match \'serialterm.*--port\\s+{ecu_port}\\b\''
+                f'}} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"'
+            )
+            setup = f'cd {remote_dir} && copy {REMOTE_SCRIPTS_DIR}\\avrdude.conf . >nul 2>&1'
+            reset_inline = ''
+            if reset_script and reset_port:
+                reset_inline = (
+                    f' & copy {REMOTE_SCRIPTS_DIR}\\{reset_script} . >nul 2>&1'
+                    f' & powershell -ExecutionPolicy Bypass -File {reset_script} -Port {reset_port}'
+                )
+            avrdude = (
+                f' & avrdude.exe -C avrdude.conf -v'
+                f' -p {AVRDUDE_DEFAULTS["mcu"]} -c {AVRDUDE_DEFAULTS["programmer"]}'
+                f' -b {AVRDUDE_DEFAULTS["baudrate"]} -P {ecu_port}'
+                f' -U flash:w:{hex_name}:i'
+            )
+            cmd = f'{pre_kill} & {setup}{reset_inline}{avrdude}'
         self._log(op_id, f"[Flash] Executing: {cmd}")
         # use_pty=True makes avrdude/python detect a TTY and flush each line
         # immediately instead of dumping everything at the end.
-        worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd, timeout=30, use_pty=True)
-        worker.output.connect(lambda m, op=op_id: self._log(op, m))
+        # flash.py tries 57600 first (lab boards' working default), then
+        # 115200 as fallback. Each attempt is capped at ~12s; 35s gives
+        # the full fallback chain room to complete before the SSH cap
+        # kicks in; sentinel short-circuit bails earlier on clean
+        # completion.
+        worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd, timeout=35, use_pty=True)
+        worker.output.connect(lambda m, op=op_id: self._on_flash_output(op, m))
         worker.finished_signal.connect(
-            lambda s, op=op_id, rp=release_ports: self._on_flash_done(s, op, rp)
+            lambda s, op=op_id, rp=release_ports, p=pc, port=ecu_port:
+                self._on_flash_done(s, op, rp, p, port)
         )
         self._workers.append(worker)
+        self._flash_worker = worker
+        self._flash_port = ecu_port
+        self._flash_pc = pc
+        self._flash_is_writing = False
+        self._flash_cancelled = False
+        self.cancel_btn.setEnabled(True)
         worker.start()
 
-    def _on_flash_done(self, status, op_id, release_ports):
-        if status == "0":
+    def _sftp_upload_flash_py(self, pc):
+        """Push local remote_scripts/220/flash.py to c:\\2026\\flash.py on the
+        remote, only if sizes differ. Keeps the helper in sync so a stale
+        copy can't hang the flash flow. Called inline before launching the
+        flash SSHWorker — short & synchronous; any network hitch throws."""
+        import paramiko
+        local_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "..", "remote_scripts", "220", "flash.py"
+        )
+        local_path = os.path.normpath(local_path)
+        if not os.path.isfile(local_path):
+            return  # nothing to upload — fall back to whatever's there
+        remote_path = f"{REMOTE_BASE_DIR}\\flash.py"
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(pc["host"], username=pc["user"],
+                       password=pc["password"], timeout=10)
+        try:
+            sftp = client.open_sftp()
+            try:
+                try:
+                    rstat = sftp.stat(remote_path)
+                    if rstat.st_size == os.path.getsize(local_path):
+                        return  # already up-to-date
+                except FileNotFoundError:
+                    pass
+                sftp.put(local_path, remote_path)
+            finally:
+                sftp.close()
+        finally:
+            client.close()
+
+    def _on_flash_output(self, op_id, text):
+        """Log every line AND sniff for the write phase. Once avrdude starts
+        programming (prints 'Writing |'), disable Cancel to prevent leaving
+        the ECU in an indeterminate half-written state."""
+        self._log(op_id, text)
+        if (not self._flash_is_writing) and ("Writing |" in text or "writing flash" in text.lower()):
+            self._flash_is_writing = True
+            self.cancel_btn.setEnabled(False)
+            self.log.append_log(
+                "[Flash] Write phase — Cancel disabled until avrdude finishes."
+            )
+
+    def _on_flash_done(self, status, op_id, release_ports, pc=None, ecu_port=None):
+        # Drop Cancel / flash-worker tracking first so a late-arriving signal
+        # can't leave the button falsely enabled.
+        cancelled = self._flash_cancelled
+        self._flash_cancelled = False
+        self._flash_worker = None
+        self.cancel_btn.setEnabled(False)
+
+        # A user cancel overrides whatever the worker reported — paramiko can
+        # return a clean "0" exit status when we close a channel mid-op, which
+        # would otherwise make a cancel look like SUCCESS.
+        if cancelled or status == "-2":
+            self._log(op_id, "[Flash] CANCELLED by user")
+        elif status == "0":
             self._log(op_id, "[Flash] SUCCESS")
         elif status == "-1":
-            self._log(op_id, "[Flash] FAILED — connection error or timeout (30s).")
+            self._log(op_id, "[Flash] FAILED — connection error or timeout.")
             self._log(op_id, "[Flash] Check that the COM port is not in use and the board is connected.")
         else:
             self._log(op_id, f"[Flash] FAILED (exit={status})")
         if release_ports is not None:
             self._release_all_ports(*release_ports)
+
+    def _cancel_flash(self):
+        """Abort the running op (reset or avrdude). Disabled automatically
+        once avrdude enters the write phase — see _on_flash_output."""
+        worker = self._flash_worker
+        if worker is None:
+            return
+        self._flash_cancelled = True  # read by _on_flash_done to force CANCELLED status
+        pc = getattr(self, "_flash_pc", None)
+        port = getattr(self, "_flash_port", None)
+        self.cancel_btn.setEnabled(False)
+        self.log.append_log(f"[Flash] Cancel requested — killing remote ops on {port}...")
+
+        # Port-scoped remote kill via SSHWorker (keeps all paramiko calls on
+        # worker threads Qt knows about; never touches widgets off-thread).
+        # Matches avrdude (-P COMxx -U), reset scripts (reset.ps1 -Port COMxx),
+        # and orphan serialterms (--port COMxx) — all scoped to THIS port,
+        # so other students' work on different boards isn't affected.
+        if pc is not None and port:
+            kill_cmd = (
+                f"wmic process where \"commandline like '%-P {port} -U%'\" delete"
+                f" & wmic process where \"commandline like '%reset.ps1 -Port {port}%'\" delete"
+                f" & wmic process where \"commandline like '%serialterm%--port {port}%'\" delete"
+                f" & wmic process where \"commandline like '%flash.py%--flash_port {port}%'\" delete"
+            )
+            kw = SSHWorker(pc["host"], pc["user"], pc["password"],
+                           kill_cmd, timeout=10)
+            self._workers.append(kw)
+            kw.start()
+
+        # Stop reading output on our side so the running worker unblocks.
+        # Its finished_signal → _on_flash_done / _on_reset_done releases ports.
+        try:
+            worker.stop()
+        except Exception:
+            pass
 
     def _do_all(self):
         op = self._mint_op()
@@ -513,28 +658,9 @@ class FlashTab(QWidget):
             self._log(op_id, "[All] Upload failed — aborting.")
             self._release_all_ports(*held)
             return
-        pc = self._get_pc_cfg()
-        board = self._get_board_cfg()
-        if pc.get("flash_method") == "flash.py":
-            self._flash_firmware(_internal=True, op_id=op_id, release_ports=held)
-            return
-        reset_script = board.get("reset_script")
-        reset_port = board.get("reset_port")
-        if reset_script and reset_port:
-            cmd = (f'mkdir {get_remote_user_dir()} >nul 2>&1 & cd {get_remote_user_dir()}'
-                   f' && copy {REMOTE_SCRIPTS_DIR}\\{reset_script} . >nul 2>&1'
-                   f' & powershell -ExecutionPolicy Bypass -File {reset_script} -Port {reset_port}')
-            self._log(op_id, "[All] Resetting board...")
-            worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd)
-            worker.output.connect(lambda m, op=op_id: self._log(op, m))
-            worker.finished_signal.connect(
-                lambda s, op=op_id, h=held: self._after_reset(s, op, h)
-            )
-            self._workers.append(worker)
-            worker.start()
-        else:
-            self._after_reset("0", op_id, held)
-
-    def _after_reset(self, _status, op_id, held):
-        self._log(op_id, "[All] Flashing firmware...")
+        # Reset is now chained inline inside _launch_flash_worker for the
+        # avrdude path (and flash.py already bundles its own reset), so the
+        # full sequence goes through a single SSH exec — no bootloader-window
+        # race from SSH session setup between reset and sync.
+        self._log(op_id, "[All] Resetting + flashing...")
         self._flash_firmware(_internal=True, op_id=op_id, release_ports=held)

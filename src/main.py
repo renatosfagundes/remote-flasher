@@ -116,6 +116,17 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Remote Firmware Flasher")
 
+    # Minimal app-wide styling: force readable text in the two spots where
+    # Qt's default palette mis-contrasts against our widgets.
+    #   - QCheckBox labels sit on dark panels and need light text.
+    #   - QMessageBox body text on a white background was rendering as a
+    #     dim goldenrod (system palette quirk), too washed-out to read.
+    app.setStyleSheet("""
+        QCheckBox { color: #ddd; }
+        QMessageBox { color: #202020; }
+        QMessageBox QLabel { color: #202020; }
+    """)
+
     icon_path = os.path.join(getattr(sys, '_MEIPASS', APP_DIR), "assets", "icon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))

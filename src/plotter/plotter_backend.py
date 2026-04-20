@@ -208,11 +208,12 @@ class PlotterBackend(QObject):
         # Append one value per channel — updated ones get the new value, the
         # rest get their last value held. Invariant: every channel_buf.count
         # equals time_buf.count after this method returns.
+        # Dashboard routing is NOT done here — that path belongs to
+        # dashboard_backend.onSerialLine so the two feeds stay independent.
         for i, buf in enumerate(self._channel_bufs):
             name = self._signal_names[i]
             if name in updates:
                 buf.append(updates[name])
-                self._route_to_dashboard(name, updates[name])
             else:
                 arr = buf.get_last(1)
                 buf.append(arr[0] if len(arr) > 0 else 0.0)

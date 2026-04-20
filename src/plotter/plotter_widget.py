@@ -45,6 +45,9 @@ class PlotterWidget(QWidget):
     # Emitted when the user clicks a legend entry — so the SignalListWidget
     # can sync its visibility checkbox for that signal.
     signalVisibilityToggled = Signal(int, bool)  # (index, visible)
+    # Emitted whenever the measurement-cursor pair moves. Consumers use this
+    # to refresh a stats readout on demand (in addition to the 5 Hz poll).
+    cursorPositionsChanged = Signal(float, float)  # (t1, t2)
 
     def __init__(self, backend: PlotterBackend, parent=None):
         super().__init__(parent)
@@ -104,7 +107,42 @@ class PlotterWidget(QWidget):
         self._hover_label.setVisible(False)
         self._plot_widget.addItem(self._hover_label, ignoreBounds=True)
 
+        # Measurement cursor pair — LinearRegionItem gives us two draggable
+        # lines with a shaded span in a single item. swapMode="block" keeps
+        # t1 ≤ t2 so the stats code never has to order the bounds.
+        self._cursor_region = pg.LinearRegionItem(
+            values=[0, 1],
+            brush=pg.mkBrush("#4488ff1e"),
+            pen=pg.mkPen("#4488ff", width=1),
+            hoverBrush=pg.mkBrush("#4488ff32"),
+            movable=True,
+            swapMode="block",
+        )
+        self._cursor_region.setVisible(False)
+        self._cursor_region.setZValue(10)
+        self._plot_widget.addItem(self._cursor_region, ignoreBounds=True)
+        self._cursor_region.sigRegionChanged.connect(self._on_cursor_region_changed)
+        self._cursors_enabled = False
+        # Offsets from latest_t — the region is stored/updated as
+        # "N seconds behind the live edge" so it slides with the
+        # scrolling window instead of drifting off the left side.
+        # None when cursors are off.
+        self._cursor_offsets: tuple[float, float] | None = None
+
+        # Last scene position the mouse reported, kept so the hover
+        # tooltip can be re-evaluated against the *current* view during
+        # scroll ticks even when the pointer is stationary.
+        self._last_mouse_scene_pos = None
+
         self._plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
+        # Hover throttling — bare mouse-move events fire at 60-120 Hz and
+        # each update walks every channel + repositions an overlay, which
+        # stalls the plot on hover. Cap at ~30 Hz via a monotonic timestamp.
+        self._last_hover_ns = 0
+        self._HOVER_MIN_GAP_NS = 33_000_000  # 33 ms → ~30 Hz
+        # Last-snapped sample index — skip the full redraw if the nearest
+        # sample hasn't changed since the previous hover tick.
+        self._last_hover_idx = -1
 
         # Refresh timer — 30 fps
         self._timer = QTimer(self)
@@ -134,11 +172,20 @@ class PlotterWidget(QWidget):
                     name=cfg.name if cfg else f"CH{i}",
                 )
                 self._curves[i] = curve
+                # Populate the custom legend + apply visibility from cfg.
+                # pg.PlotItem.plot() doesn't auto-add to our ClickableLegendItem
+                # (it's set as a ViewBox child, not the plot's default legend).
+                self.update_curve_style(i)
 
         # Remove excess curves
         to_remove = [i for i in self._curves if i >= count]
         for i in to_remove:
-            self._plot_widget.removeItem(self._curves.pop(i))
+            curve = self._curves.pop(i)
+            try:
+                self._legend.removeItem(curve)
+            except Exception:
+                pass
+            self._plot_widget.removeItem(curve)
 
     def _on_legend_clicked(self, curve, label_text):
         """Legend entry clicked — toggle that curve's visibility."""
@@ -226,14 +273,51 @@ class PlotterWidget(QWidget):
         # Scroll X axis
         self._plot_widget.setXRange(t_min, latest_t, padding=0)
 
+        # Slide the measurement-cursor pair forward so it stays pinned
+        # to its offsets from the live edge instead of falling off-screen.
+        if self._cursors_enabled and self._cursor_offsets is not None:
+            o1, o2 = self._cursor_offsets
+            # Block signals: setRegion would otherwise fire sigRegionChanged
+            # → _on_cursor_region_changed → recompute offsets (no-op but
+            # wasteful, and a source of subtle drift if latest_t races).
+            self._cursor_region.blockSignals(True)
+            try:
+                self._cursor_region.setRegion(
+                    (latest_t - o1, latest_t - o2)
+                )
+            finally:
+                self._cursor_region.blockSignals(False)
+
+        # Re-run the hover update against the *current* view so the
+        # tooltip tracks the mouse's actual location even when only the
+        # plot is moving (stationary pointer, scrolling window).
+        if self._last_mouse_scene_pos is not None:
+            self._update_hover(self._last_mouse_scene_pos)
+
     def _on_mouse_moved(self, pos):
-        """Show crosshair + per-curve dot + value tooltip on hover."""
+        """Mouse event → throttle → hover update."""
         if not self._plot_widget.sceneBoundingRect().contains(pos):
             self._vline.setVisible(False)
             self._hover_label.setVisible(False)
             self._hover_dots.setVisible(False)
+            self._last_hover_idx = -1
+            self._last_mouse_scene_pos = None
             return
 
+        # Throttle — mouse-move fires at 60-120 Hz; the scroll-driven
+        # hover refresh in _refresh is already rate-limited to 30 fps.
+        import time as _time
+        now_ns = _time.monotonic_ns()
+        if now_ns - self._last_hover_ns < self._HOVER_MIN_GAP_NS:
+            self._last_mouse_scene_pos = pos  # remember even when throttled
+            return
+        self._last_hover_ns = now_ns
+        self._last_mouse_scene_pos = pos
+        self._update_hover(pos)
+
+    def _update_hover(self, pos):
+        """Draw crosshair + per-curve dot + value tooltip for the given
+        scene position. Shared by mouse-move and refresh-driven paths."""
         mouse_point = self._plot_widget.plotItem.vb.mapSceneToView(pos)
         x = mouse_point.x()
         self._vline.setPos(x)
@@ -244,10 +328,17 @@ class PlotterWidget(QWidget):
         if len(t_all) == 0:
             self._hover_label.setVisible(False)
             self._hover_dots.setVisible(False)
+            self._last_hover_idx = -1
             return
 
         # Nearest-sample index for the hover x.
         idx = min(np.searchsorted(t_all, x), len(t_all) - 1)
+        # Skip the full redraw if we're still on the same sample — only
+        # the label y needs to track vertical mouse motion for readability.
+        if idx == self._last_hover_idx:
+            self._hover_label.setPos(float(t_all[idx]), mouse_point.y())
+            return
+        self._last_hover_idx = idx
         x_snap = float(t_all[idx])
 
         dot_spots = []
@@ -268,8 +359,168 @@ class PlotterWidget(QWidget):
         self._hover_dots.setData(dot_spots)
         self._hover_dots.setVisible(bool(dot_spots))
         self._hover_label.setText("\n".join(lines))
-        self._hover_label.setPos(mouse_point)
+        # Snap the label's X to the sample's X (not raw mouse X) so the
+        # tooltip and dot stay aligned instead of the label drifting while
+        # the dot snaps — that visual mismatch was the "jitter" you saw.
+        self._hover_label.setPos(x_snap, mouse_point.y())
         self._hover_label.setVisible(True)
+
+    # ── Measurement cursors ───────────────────────────────────────
+    def _on_cursor_region_changed(self):
+        """User dragged a cursor — capture the new offsets from the live
+        edge so the region continues to ride the scrolling window from
+        its *new* position (rather than snapping back to the old offsets)."""
+        t1, t2 = self._cursor_region.getRegion()
+        t_all = self._backend.time_buffer().get_array()
+        if self._cursors_enabled and len(t_all) > 0:
+            latest_t = float(t_all[-1])
+            self._cursor_offsets = (latest_t - float(t1), latest_t - float(t2))
+        self.cursorPositionsChanged.emit(float(t1), float(t2))
+
+    def set_cursors_enabled(self, on: bool):
+        """Toggle the measurement cursor pair. On enable, seed the region
+        at the 25% / 75% marks of the visible window so it's immediately
+        useful without the user having to drag both ends into view."""
+        self._cursors_enabled = bool(on)
+        if on:
+            t_all = self._backend.time_buffer().get_array()
+            if len(t_all) > 0:
+                latest_t = float(t_all[-1])
+                t_lo = max(0.0, latest_t - self._window_seconds)
+                span = latest_t - t_lo
+                t1 = t_lo + span * 0.25
+                t2 = t_lo + span * 0.75
+                # Block signals here so the seed placement doesn't
+                # round-trip through _on_cursor_region_changed before
+                # we've decided the initial offsets.
+                self._cursor_region.blockSignals(True)
+                try:
+                    self._cursor_region.setRegion((t1, t2))
+                finally:
+                    self._cursor_region.blockSignals(False)
+                self._cursor_offsets = (latest_t - t1, latest_t - t2)
+            else:
+                self._cursor_offsets = None
+        else:
+            self._cursor_offsets = None
+        self._cursor_region.setVisible(self._cursors_enabled)
+
+    def cursors_enabled(self) -> bool:
+        return self._cursors_enabled
+
+    def cursor_positions(self) -> tuple[float, float]:
+        """Return (t1, t2) of the cursor pair. (0,0) if cursors are off."""
+        if not self._cursors_enabled:
+            return (0.0, 0.0)
+        t1, t2 = self._cursor_region.getRegion()
+        return (float(t1), float(t2))
+
+    # ── View controls ─────────────────────────────────────────────
+    def auto_y(self):
+        """Fit Y range to data visible in the current X window.
+
+        One-shot: sets an explicit YRange (which disables pyqtgraph's
+        built-in auto-range) so subsequent refreshes don't keep resizing
+        as new samples arrive — the user gets a stable zoom until they
+        either interact or click Auto-Y again.
+        """
+        t_all = self._backend.time_buffer().get_array()
+        if len(t_all) == 0:
+            return
+        latest_t = float(t_all[-1])
+        t_min = latest_t - self._window_seconds
+        mask = t_all >= t_min
+        configs = self._backend.configs
+        lo, hi = None, None
+        for i in self._curves:
+            if i >= len(configs) or not configs[i].visible:
+                continue
+            ch = self._backend.channel_buffer(i).get_array()
+            n = min(len(t_all), len(ch))
+            if n == 0:
+                continue
+            ys = ch[-n:][mask[-n:]]
+            if len(ys) == 0:
+                continue
+            cfg = configs[i]
+            ys = ys * cfg.scale + cfg.offset
+            y_lo, y_hi = float(np.min(ys)), float(np.max(ys))
+            lo = y_lo if lo is None else min(lo, y_lo)
+            hi = y_hi if hi is None else max(hi, y_hi)
+        if lo is None or hi is None:
+            return
+        pad = max((hi - lo) * 0.05, 1e-3)
+        self._plot_widget.setYRange(lo - pad, hi + pad, padding=0)
+
+    def reset_view(self):
+        """Restore default scrolling X and fit Y to visible data."""
+        # X scrolling resumes automatically on the next _refresh tick
+        # (setXRange is called there); just handle Y.
+        self.auto_y()
+
+    # ── Statistics helpers ────────────────────────────────────────
+    def compute_stats(self, t_lo: float | None = None,
+                      t_hi: float | None = None) -> dict:
+        """Per-visible-channel stats over [t_lo, t_hi] (or the current
+        visible window if either bound is None).
+
+        Returns {channel_index: {name, color, min, max, mean, std,
+        delta, n}}, where `delta` is (last - first) sample in the span —
+        useful for integrated quantities like distance or total charge.
+        """
+        t_all = self._backend.time_buffer().get_array()
+        if len(t_all) == 0:
+            return {}
+        if t_lo is None or t_hi is None:
+            latest_t = float(t_all[-1])
+            t_hi = latest_t
+            t_lo = latest_t - self._window_seconds
+        if t_hi <= t_lo:
+            return {}
+        mask = (t_all >= t_lo) & (t_all <= t_hi)
+        if not np.any(mask):
+            return {}
+        configs = self._backend.configs
+        out: dict = {}
+        for i in self._curves:
+            if i >= len(configs) or not configs[i].visible:
+                continue
+            ch = self._backend.channel_buffer(i).get_array()
+            n = min(len(t_all), len(ch))
+            if n == 0:
+                continue
+            ys = ch[-n:][mask[-n:]]
+            if len(ys) == 0:
+                continue
+            cfg = configs[i]
+            ys = ys * cfg.scale + cfg.offset
+            out[i] = {
+                "name": cfg.name,
+                "color": cfg.color,
+                "min": float(np.min(ys)),
+                "max": float(np.max(ys)),
+                "mean": float(np.mean(ys)),
+                "std": float(np.std(ys)),
+                "delta": float(ys[-1] - ys[0]),
+                "n": int(len(ys)),
+            }
+        return out
+
+    def compute_sample_rate(self) -> float:
+        """Effective sample rate (samples/sec) over the last 2 s of the
+        time buffer. Returns 0 when there's not enough data."""
+        t_all = self._backend.time_buffer().get_array()
+        if len(t_all) < 2:
+            return 0.0
+        t_end = float(t_all[-1])
+        mask = t_all >= t_end - 2.0
+        t_slice = t_all[mask]
+        if len(t_slice) < 2:
+            return 0.0
+        duration = float(t_slice[-1] - t_slice[0])
+        if duration <= 0:
+            return 0.0
+        return (len(t_slice) - 1) / duration
 
     def clear_plot(self):
         """Remove all curves and reset."""

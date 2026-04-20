@@ -9,10 +9,15 @@
 #include "DashboardSignals.h"
 #include <string.h>
 
-// Signal entry — tagged union: float with decimals, int, or bool
+// Signal entry — tagged union: float with decimals, int, or bool.
+// Enum is at file scope (not nested) so AVR-g++ in C++ mode places the
+// enumerators in the enclosing namespace — nesting inside the struct
+// would scope them as DashEntry::DS_FLOAT and break the bare uses below.
+enum DashType { DS_FLOAT, DS_INT, DS_BOOL };
+
 typedef struct {
     char name[DASH_MAX_NAME_LEN];
-    enum { DS_FLOAT, DS_INT, DS_BOOL } type;
+    DashType type;
     union {
         struct { float val; uint8_t dec; } f;
         int i;

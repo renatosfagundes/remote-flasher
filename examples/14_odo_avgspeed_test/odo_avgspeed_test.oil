@@ -1,0 +1,42 @@
+// Example 14: Odometer & Average Speed Test — 20 Hz
+OIL_VERSION = "2.5" : "odo_avgspeed_test";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "odo_avgspeed_test.cpp";
+      APP_SRC = "DashboardSignals.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM gaugeAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = SendGauges; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 50;
+      CYCLETIME = 50;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK SendGauges {
+    PRIORITY = 5;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};

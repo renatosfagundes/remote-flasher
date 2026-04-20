@@ -1,0 +1,42 @@
+// Example 15: Plotter Waveforms — 20 Hz
+OIL_VERSION = "2.5" : "plotter_waveforms";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "plotter_waveforms.cpp";
+      APP_SRC = "DashboardSignals.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM waveAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = SendWaves; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 50;
+      CYCLETIME = 50;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK SendWaves {
+    PRIORITY = 5;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};

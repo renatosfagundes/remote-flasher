@@ -45,7 +45,7 @@ def _pc(key, flash_method, boards):
 
 # Each computer in the lab with its boards and COM port mappings
 COMPUTERS = {
-    f"PC 217 ({SSH_HOSTS['PC 217']['host']})": _pc("PC 217", "avrdude", {
+    f"PC 217 ({SSH_HOSTS['PC 217']['host']})": _pc("PC 217", "flash.py", {
         "Placa 01": {
             "ecu_ports": ["COM25", "COM26", "COM27", "COM28"],
             "reset_port": "COM57",
@@ -99,11 +99,15 @@ COMPUTERS = {
     }),
 }
 
-# Default avrdude parameters
+# Default avrdude parameters.
+# Baudrate 115200 matches Optiboot (current ECU bootloader) per
+# JigaAppCmd.properties → ecu.new.baudrate=115200. The old value of 57600
+# was for the legacy bootloader; using it with Optiboot produces silent
+# sync failures (resp=0x00 on every attempt).
 AVRDUDE_DEFAULTS = {
     "programmer": "arduino",
     "mcu": "atmega328p",
-    "baudrate": "57600",
+    "baudrate": "115200",
     "config_file": "avrdude.conf",
 }
 

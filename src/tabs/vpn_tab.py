@@ -438,25 +438,45 @@ class VPNTab(QWidget):
         self.vpn_status_changed.emit(False)
 
     def _test_connection(self):
-        self.log.append_log("[VPN] Testing connection to 172.20.36.217...")
+        self.log.append_log("[VPN] Testing connectivity to lab PCs via SSH...")
         threading.Thread(target=self._do_test, daemon=True).start()
 
     def _do_test(self):
-        try:
-            result = subprocess.run(
-                ["ping", "-n", "1", "-w", "3000", "172.20.36.217"],
-                capture_output=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            stdout = result.stdout.decode("cp850", errors="replace").strip()
-            if result.returncode == 0:
-                self._log_signal.emit("[VPN] SUCCESS — 172.20.36.217 is reachable!")
-                self._status_signal.emit("connected", "Reachable", True)
-            else:
-                self._log_signal.emit("[VPN] FAILED — host not reachable. Is the VPN connected?")
-                self._log_signal.emit(stdout)
-                self._status_signal.emit("disconnected", "Not reachable", False)
-        except Exception as e:
-            self._log_signal.emit(f"[VPN] Test error: {e}")
+        # Test Connection is a read-only reachability probe — must NOT mutate
+        # the tracked VPN state. A transient SSH error should not make the
+        # app believe the VPN dropped (that desynced the Disconnect button
+        # and forced manual reconnects in earlier versions).
+        #
+        # We use SSH instead of ICMP ping because the lab PCs block pings
+        # but answer SSH — which is what the app actually needs anyway. An
+        # SSH handshake + a trivial `echo` command proves the PC is both
+        # routable AND responsive to the app's real workload.
+        any_ok = False
+        for pc_label, pc_info in COMPUTERS.items():
+            host = pc_info.get("host")
+            if not host:
+                continue
+            short = pc_label.split("(")[0].strip()
+            try:
+                client = paramiko.SSHClient()
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                client.connect(host, username=pc_info["user"],
+                               password=pc_info["password"], timeout=6,
+                               banner_timeout=8, auth_timeout=6)
+                _, stdout_ch, _ = client.exec_command('echo OK', timeout=5)
+                reply = stdout_ch.read().decode("utf-8", errors="replace").strip()
+                client.close()
+                if reply == "OK":
+                    self._log_signal.emit(f"[VPN] {short} ({host}): OK")
+                    any_ok = True
+                else:
+                    self._log_signal.emit(f"[VPN] {short} ({host}): SSH responded but echo gave '{reply}'")
+            except Exception as e:
+                self._log_signal.emit(f"[VPN] {short} ({host}): UNREACHABLE — {e}")
+        if any_ok:
+            self._log_signal.emit("[VPN] At least one lab PC is reachable — VPN is working.")
+        else:
+            self._log_signal.emit("[VPN] FAILED — no lab PC responded to SSH. Is the VPN connected?")
 
     # ── Lab Health Check ──────────────────────────────────────────
 
@@ -566,19 +586,27 @@ class VPNTab(QWidget):
                     self._health_result.emit(short, "camera", "no_ssh")
                 continue
 
-            # Check camera process if this PC has one
+            # Check camera process if this PC has one. Looks for BOTH
+            # python.exe and pythonw.exe — the updated camera autostart runs
+            # with pythonw (no console window, can't freeze on QuickEdit),
+            # so a python-only check would report "frozen" for a healthy
+            # camera. We also pattern-match on `camera` in the command line
+            # to distinguish a camera process from other python workloads.
             if pc_info.get("camera_url"):
                 try:
                     client = paramiko.SSHClient()
                     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                     client.connect(host, username=user, password=password, timeout=10)
+                    # wmic shows command line, so we can match camera1.py
+                    # specifically rather than relying on process name alone.
                     _, stdout_ch, _ = client.exec_command(
-                        'tasklist /FI "IMAGENAME eq python.exe" /FO CSV /NH', timeout=10)
+                        'wmic process where "name=\'python.exe\' or name=\'pythonw.exe\'" '
+                        'get ProcessId,CommandLine', timeout=10)
                     proc_output = stdout_ch.read().decode("utf-8", errors="replace")
                     client.close()
 
-                    if "camera" in proc_output.lower() or proc_output.strip().count("python.exe") > 0:
-                        # python.exe is running — likely the camera (best we can check without PID)
+                    low = proc_output.lower()
+                    if ("camera1" in low) or ("\\camera\\" in low) or ("/camera/" in low):
                         self._health_result.emit(short, "camera", "ok")
                         self._log_signal.emit(f"[Health] {short}: camera process running")
                     else:

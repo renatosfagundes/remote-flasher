@@ -55,6 +55,7 @@ class SSHWorker(QThread):
         else:
             self.command = command
         self._captured_exit = None
+        self._sentinel_seen = False
         self._stop = False
 
     def _decode(self, raw):
@@ -80,12 +81,16 @@ class SSHWorker(QThread):
             if self._stop:
                 return b""
             # Intercept sentinel: capture real exit code and suppress the line.
+            # Track sentinel-seen separately from the parsed int so a broken
+            # !ERRORLEVEL! expansion (rare on old cmd.exe) still lets us bail
+            # out of the recv loop instead of waiting for the 15s timeout.
             if _EXIT_SENTINEL in line:
+                self._sentinel_seen = True
                 tail = line.split(_EXIT_SENTINEL, 1)[1].strip()
                 try:
                     self._captured_exit = int(tail)
                 except ValueError:
-                    pass
+                    self._captured_exit = 1  # unknown — assume failure
                 continue
             if line == "":
                 continue
@@ -114,6 +119,12 @@ class SSHWorker(QThread):
 
             while not channel.exit_status_ready() or channel.recv_ready() or channel.recv_stderr_ready():
                 if self._stop:
+                    break
+                # Sentinel short-circuit: once we saw __RF_EXIT__, the command
+                # has finished. Windows OpenSSH + PTY can take tens of seconds
+                # to flip exit_status_ready() True — no reason to wait.
+                if self.use_pty and self._sentinel_seen \
+                        and not channel.recv_ready() and not channel.recv_stderr_ready():
                     break
                 # Hard timeout — if the remote process hangs (e.g. avrdude
                 # stuck on a COM port), don't wait forever.
@@ -148,13 +159,17 @@ class SSHWorker(QThread):
             if err_buf:
                 self._emit_lines(err_buf + b"\n")
 
-            exit_status = channel.recv_exit_status()
-            if exit_status > 0x7FFFFFFF:
-                exit_status = exit_status - 0x100000000
-            # Windows OpenSSH + PTY: channel exit code is unreliable, trust the
-            # sentinel we echoed instead.
+            # Prefer the sentinel we echoed to cmd's output — Windows OpenSSH
+            # + PTY gives unreliable channel exit codes AND recv_exit_status
+            # can block indefinitely if the channel never flipped ready.
             if self.use_pty and self._captured_exit is not None:
                 exit_status = self._captured_exit
+            elif self._stop:
+                exit_status = -2  # cancelled by user
+            else:
+                exit_status = channel.recv_exit_status()
+                if exit_status > 0x7FFFFFFF:
+                    exit_status = exit_status - 0x100000000
             client.close()
             self.finished_signal.emit(str(exit_status))
         except Exception as e:
@@ -351,65 +366,6 @@ class PortsFetchWorker(QThread):
                     pass
 
 
-class LockAcquireWorker(QThread):
-    """Acquire cross-instance COM-port locks on a remote PC via SFTP.
-
-    Atomic-ish: if any port can't be acquired, releases the ones we got and
-    reports the conflicts so the caller can show the user who holds them.
-    """
-    output = Signal(str)
-    # (all_acquired, conflicts) — conflicts is [(port, owner_description)]
-    finished_signal = Signal(bool, list)
-
-    def __init__(self, pc_info, ports, parent=None):
-        super().__init__(parent)
-        self.pc_info = pc_info
-        self.ports = [p for p in ports if p]
-
-    def run(self):
-        try:
-            from port_lock import acquire_lock, release_lock
-            acquired = []
-            conflicts = []
-            for port in self.ports:
-                ok, owner = acquire_lock(self.pc_info, port)
-                if ok:
-                    acquired.append(port)
-                else:
-                    conflicts.append((port, owner))
-                    break  # no point trying the rest
-            if conflicts:
-                for port in acquired:
-                    release_lock(self.pc_info, port)
-                self.finished_signal.emit(False, conflicts)
-            else:
-                self.finished_signal.emit(True, [])
-        except Exception as e:
-            # Never let a lock-worker crash take down the app — fail open.
-            self.output.emit(f"[Lock] Worker error: {e}")
-            self.finished_signal.emit(True, [])
-
-
-class LockReleaseWorker(QThread):
-    """Fire-and-forget release of cross-instance COM-port locks."""
-    finished_signal = Signal()
-
-    def __init__(self, pc_info, ports, parent=None):
-        super().__init__(parent)
-        self.pc_info = pc_info
-        self.ports = [p for p in ports if p]
-
-    def run(self):
-        try:
-            from port_lock import release_lock
-            for port in self.ports:
-                release_lock(self.pc_info, port)
-        except Exception:
-            pass  # best-effort — stale locks will be cleaned up by pollers
-        finally:
-            self.finished_signal.emit()
-
-
 class CameraWorker(QThread):
     """Fetch MJPEG frames from a camera URL."""
     frame_ready = Signal(QImage)
@@ -496,6 +452,7 @@ class SerialWorker(QThread):
             # Use full path to run serialterm.py — avoids cd issues over SSH.
             # The "if not exist" must be wrapped in cmd /c to prevent it from
             # swallowing subsequent commands when the file already exists.
+            # Master semantics — ONE SSH session, no SFTP, no retries.
             remote_script = f"{self.remote_dir}\\serialterm.py"
             cmd = (
                 f"cmd /c \"if not exist {remote_script}"
@@ -536,10 +493,26 @@ class SerialWorker(QThread):
                     break
                 else:
                     time.sleep(0.05)
-            self._client.close()
         except Exception as e:
             self.output.emit(f"[Serial ERROR] {e}")
-        self.finished_signal.emit()
+        finally:
+            # try/finally kept (not a new connection — just ensures the
+            # existing SSH client+channel close cleanly on ANY exit path
+            # instead of leaking sshd-session.exe on the remote whenever
+            # the recv loop throws mid-read).
+            try:
+                if self._channel is not None:
+                    self._channel.close()
+            except Exception:
+                pass
+            try:
+                if self._client is not None:
+                    self._client.close()
+            except Exception:
+                pass
+            self._client = None
+            self._channel = None
+            self.finished_signal.emit()
 
     def send_data(self, text: str):
         """Send text to the remote serial terminal's stdin."""
@@ -552,6 +525,26 @@ class SerialWorker(QThread):
     def stop(self):
         self._running = False
         if self._channel:
+            # Signal the remote python to shut down cleanly so the COM port
+            # is released. Three-step sequence, because Windows OpenSSH
+            # wraps our exec_command in `cmd.exe /c "..."` and we have to
+            # reach the grandchild python reliably:
+            #   1. Send Ctrl-C as a best-effort hint (ignored without a PTY,
+            #      but harmless).
+            #   2. shutdown_write() sends SSH_MSG_CHANNEL_EOF — sshd-session
+            #      closes the write end of cmd's stdin pipe, which cmd
+            #      inherits to python. python's sys.stdin.read() unblocks
+            #      with '' and the writer thread exits → main exits →
+            #      ser.close() → COM released. This is the reliable path.
+            #   3. close() tears down the channel on our side.
+            try:
+                self._channel.send(b"\x03")
+            except Exception:
+                pass
+            try:
+                self._channel.shutdown_write()
+            except Exception:
+                pass
             try:
                 self._channel.close()
             except Exception:

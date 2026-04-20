@@ -33,6 +33,9 @@ Both live in `arduino_lib/`. Copy the required `.h` and `.cpp` files into your e
 | 11 | Dashboard Warnings | Warning lights, status indicators, turn signals | DashboardSignals | dashboard_warnings.oil/cpp |
 | 12 | Dashboard Doors | Interactive doors via VirtualIO + Dashboard | VirtualIO, DashboardSignals | dashboard_doors.oil/cpp |
 | 13 | Dashboard Full | Multi-task vehicle simulation (3 tasks, different rates) | DashboardSignals | dashboard_full.oil/cpp |
+| 14 | Odo / Avg Speed Test | Focused verification of `distance` + `avgSpeed` signals (step plateaus, EMA lag) | DashboardSignals | odo_avgspeed_test.oil/cpp |
+| 15 | Plotter Waveforms | Sine/triangle/square/sawtooth on custom names — generic plotter demo | DashboardSignals | plotter_waveforms.oil/cpp |
+| 16 | Plotter Step Response | Square input + 3 EMAs at different τ — designed for the measurement cursors | DashboardSignals | plotter_step_response.oil/cpp |
 
 ## Dashboard Signal Format
 

@@ -55,6 +55,14 @@ CPU test {
     };
   };
 
+  // Asymmetric stacks to fit 2 KB RAM. EngineTask needs the full 256 B
+  // (Serial.print(float) via dtostrf uses ~30 B itself on top of the
+  // 11-dashSend call chain) — 128 B was too tight and silently
+  // corrupted kernel state, producing a firmware that flashed fine
+  // but never emitted a single Serial byte. The bool-only Indicator
+  // and Door tasks stay at 128 B since they never go through the
+  // float-formatting path. Fits alongside DashboardSignals trimmed
+  // to 16 slots / 18-char names.
   TASK EngineTask {
     PRIORITY = 10;
     AUTOSTART = FALSE;
@@ -68,7 +76,7 @@ CPU test {
     AUTOSTART = FALSE;
     ACTIVATION = 1;
     SCHEDULE = FULL;
-    STACKSIZE = 256;
+    STACKSIZE = 128;
   };
 
   TASK DoorTask {
@@ -76,6 +84,6 @@ CPU test {
     AUTOSTART = FALSE;
     ACTIVATION = 1;
     SCHEDULE = FULL;
-    STACKSIZE = 256;
+    STACKSIZE = 128;
   };
 };

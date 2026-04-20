@@ -1,0 +1,42 @@
+// Example 16: Plotter Step Response — 20 Hz
+OIL_VERSION = "2.5" : "plotter_step_response";
+
+CPU test {
+  OS config {
+    STATUS = STANDARD;
+    BUILD = TRUE {
+      TRAMPOLINE_BASE_PATH = "../../../";
+      APP_NAME = "image";
+      APP_SRC = "plotter_step_response.cpp";
+      APP_SRC = "DashboardSignals.cpp";
+      CPPCOMPILER = "avr-g++";
+      COMPILER    = "avr-gcc";
+      LINKER      = "avr-gcc";
+      ASSEMBLER   = "avr-gcc";
+      COPIER      = "avr-objcopy";
+      SYSTEM      = PYTHON;
+      LIBRARY     = serial;
+    };
+    SYSTEM_CALL = TRUE;
+  };
+
+  APPMODE stdAppmode {};
+
+  ALARM stepAlarm {
+    COUNTER = SystemCounter;
+    ACTION = ACTIVATETASK { TASK = SendStep; };
+    AUTOSTART = TRUE {
+      ALARMTIME = 50;
+      CYCLETIME = 50;
+      APPMODE = stdAppmode;
+    };
+  };
+
+  TASK SendStep {
+    PRIORITY = 5;
+    AUTOSTART = FALSE;
+    ACTIVATION = 1;
+    SCHEDULE = FULL;
+    STACKSIZE = 256;
+  };
+};

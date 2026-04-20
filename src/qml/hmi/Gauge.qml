@@ -15,6 +15,9 @@ Item {
     property string unitLabel: "km/h"
     property color accentColor: "#01E6DE"
     property real redZoneStart: 200
+    // How many value units before redZoneStart the accent→red fade begins.
+    // Produces a soft transition instead of a hard color boundary.
+    property real redFadeRange: 20
     property real s: 1.0                    // Scale factor
     // Display formatting for the centre value (e.g. RPM 1023 with
     // displayDivisor=1000, decimals=1 → "1.0").
@@ -91,49 +94,96 @@ Item {
                 ctx.stroke();
             }
 
-            // 4. Draw Active "Glow" Progress Arc
+            // 4. Draw Active "Glow" Progress Arc with a soft accent→red fade.
+            //    Rendered as three sub-regions — solid accent up to fadeStart,
+            //    HSL-interpolated mini-arcs across the fade window, solid red
+            //    from redZoneStart onward. A single conic gradient was tried
+            //    first but Qt's CanvasGradient implementation spread the fade
+            //    across the whole arc regardless of stop positions, producing
+            //    a red bleed that started near mid-scale.
             if (value > minimumValue) {
                 var arcStartRad = (minimumValueAngle - 90) * Math.PI / 180;
                 var arcEndRad = valueToAngle(value) - Math.PI/2;
                 var arcRadius = radius - (25 * s);
+                var redColor = "#ff2244";
 
-                // If value is past the red zone, draw in two segments
-                if (redZoneStart > 0 && value > redZoneStart) {
-                    var rzRad = valueToAngle(redZoneStart) - Math.PI/2;
-
-                    // Normal segment (up to red zone)
+                function _hexToRgb(c) {
+                    var h = String(c).replace("#", "");
+                    return {
+                        r: parseInt(h.substr(0, 2), 16),
+                        g: parseInt(h.substr(2, 2), 16),
+                        b: parseInt(h.substr(4, 2), 16)
+                    };
+                }
+                // Straight RGB interpolation — no hue rotation, so the fade
+                // never passes through magenta/purple. The midpoint is
+                // desaturated, which here reads as a neutral "crossing"
+                // between the two channel colors rather than a third hue.
+                function _lerp(a, b, t) {
+                    return "rgb(" + Math.round(a.r + (b.r - a.r) * t) + "," +
+                                   Math.round(a.g + (b.g - a.g) * t) + "," +
+                                   Math.round(a.b + (b.b - a.b) * t) + ")";
+                }
+                function _stroke(a, b, color) {
+                    if (b <= a) return;
                     ctx.beginPath();
-                    var glowGrad = ctx.createRadialGradient(centerX, centerY, radius - 35*s, centerX, centerY, radius - 15*s);
-                    glowGrad.addColorStop(0, "transparent");
-                    glowGrad.addColorStop(0.5, accentColor);
-                    glowGrad.addColorStop(1, "transparent");
-                    ctx.strokeStyle = glowGrad;
+                    ctx.strokeStyle = color;
                     ctx.lineWidth = 14 * s;
-                    ctx.arc(centerX, centerY, arcRadius, arcStartRad, rzRad);
-                    ctx.stroke();
-
-                    // Red segment (neon red glow)
-                    ctx.beginPath();
-                    var redGrad = ctx.createRadialGradient(centerX, centerY, radius - 35*s, centerX, centerY, radius - 15*s);
-                    redGrad.addColorStop(0, "transparent");
-                    redGrad.addColorStop(0.5, "#ff2244");
-                    redGrad.addColorStop(1, "transparent");
-                    ctx.strokeStyle = redGrad;
-                    ctx.lineWidth = 14 * s;
-                    ctx.arc(centerX, centerY, arcRadius, rzRad, arcEndRad);
-                    ctx.stroke();
-                } else {
-                    // All within normal range
-                    ctx.beginPath();
-                    var glowGrad2 = ctx.createRadialGradient(centerX, centerY, radius - 35*s, centerX, centerY, radius - 15*s);
-                    glowGrad2.addColorStop(0, "transparent");
-                    glowGrad2.addColorStop(0.5, accentColor);
-                    glowGrad2.addColorStop(1, "transparent");
-                    ctx.strokeStyle = glowGrad2;
-                    ctx.lineWidth = 14 * s;
-                    ctx.arc(centerX, centerY, arcRadius, arcStartRad, arcEndRad);
+                    ctx.arc(centerX, centerY, arcRadius, a, b);
                     ctx.stroke();
                 }
+
+                ctx.save();
+                var accentRgb = _hexToRgb(accentColor);
+                var redRgb = _hexToRgb(redColor);
+
+                if (redZoneStart <= 0) {
+                    _stroke(arcStartRad, arcEndRad, accentColor);
+                } else {
+                    var fadeStart = Math.max(minimumValue, redZoneStart - redFadeRange);
+                    var fadeStartRad = valueToAngle(fadeStart) - Math.PI/2;
+                    var rzRad = valueToAngle(redZoneStart) - Math.PI/2;
+
+                    // Solid accent up to fadeStart.
+                    _stroke(arcStartRad, Math.min(arcEndRad, fadeStartRad), accentColor);
+
+                    // Interpolated fade window — subdivided so the HSL
+                    // transition renders smoothly without visible banding.
+                    var fr2Start = Math.max(arcStartRad, fadeStartRad);
+                    var fr2End = Math.min(arcEndRad, rzRad);
+                    if (fr2End > fr2Start) {
+                        var N = 24;
+                        for (var k = 0; k < N; k++) {
+                            var t0 = k / N, t1 = (k + 1) / N;
+                            var a0 = fadeStartRad + (rzRad - fadeStartRad) * t0;
+                            var a1 = fadeStartRad + (rzRad - fadeStartRad) * t1;
+                            var drawA0 = Math.max(a0, fr2Start);
+                            var drawA1 = Math.min(a1, fr2End);
+                            if (drawA1 <= drawA0) continue;
+                            _stroke(drawA0, drawA1,
+                                    _lerp(accentRgb, redRgb, (t0 + t1) / 2));
+                        }
+                    }
+
+                    // Solid red from redZoneStart onward.
+                    _stroke(Math.max(arcStartRad, rzRad), arcEndRad, redColor);
+                }
+
+                // Carve out the inner/outer edges of the stroke so only the
+                // middle stripe stays — "bright center with soft edges" glow.
+                ctx.globalCompositeOperation = "destination-out";
+                ctx.beginPath();
+                var rg = ctx.createRadialGradient(
+                    centerX, centerY, radius - 35 * s,
+                    centerX, centerY, radius - 15 * s);
+                rg.addColorStop(0.0, "rgba(0,0,0,1)");
+                rg.addColorStop(0.5, "rgba(0,0,0,0)");
+                rg.addColorStop(1.0, "rgba(0,0,0,1)");
+                ctx.strokeStyle = rg;
+                ctx.lineWidth = 14 * s;
+                ctx.arc(centerX, centerY, arcRadius, arcStartRad, arcEndRad);
+                ctx.stroke();
+                ctx.restore();
             }
 
             // 5. Ticks and Labels — font scales with gauge size, not global s
@@ -219,10 +269,20 @@ Item {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: (root.value / root.displayDivisor).toFixed(root.decimals)
-            color: (root.redZoneStart > 0 && root.value >= root.redZoneStart) ? "#ff2244" : "white"
+            // Interpolate white → red across the fade window so the number
+            // doesn't snap abruptly when crossing the redline.
+            color: {
+                var rz = root.redZoneStart;
+                if (rz <= 0) return "white";
+                var fs = Math.max(root.minimumValue, rz - root.redFadeRange);
+                if (root.value <= fs) return "white";
+                if (root.value >= rz) return "#ff2244";
+                var t = (root.value - fs) / (rz - fs);
+                return Qt.rgba(1.0, 1.0 - t * (221/255), 1.0 - t * (187/255), 1);
+            }
             font.pixelSize: root._dim * 0.10
             font.bold: true
-            Behavior on color { ColorAnimation { duration: 300 } }
+            Behavior on color { ColorAnimation { duration: 150 } }
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter

@@ -61,11 +61,19 @@
 
 #include <Arduino.h>
 
-// Maximum number of signals per flush line
-#define DASH_MAX_SIGNALS 32
+// Maximum number of signals per flush line.
+// Sized to fit example 13 (IndicatorTask sends 15 signals per flush)
+// inside the ATmega328p's 2 KB RAM alongside a 256-byte EngineTask
+// stack + kernel + Arduino Serial buffers. Bump cautiously and
+// watch the .bss size in `avr-size` output — each extra slot costs
+// DASH_MAX_NAME_LEN + ~10 bytes.
+#define DASH_MAX_SIGNALS 16
 
-// Maximum signal name length
-#define DASH_MAX_NAME_LEN 24
+// Maximum signal name length (including NUL terminator). Longest
+// name currently in use is 17 chars ("seatbeltUnbuckled"), so 18
+// fits exactly — any longer name would be truncated by strncpy in
+// _addEntry and break Plotter/Dashboard routing by name.
+#define DASH_MAX_NAME_LEN 18
 
 #ifdef __cplusplus
 extern "C" {

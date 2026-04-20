@@ -19,3 +19,11 @@ RemoteFlasher_v*.spec
 __pycache__/
 *.pyc
 third_party/
+
+# Dev scratch — LLM-assisted QML drafts and preview harness, not needed for
+# end users. Kept locally but not tracked.
+Gemini_help/
+
+# Ad-hoc firmware sketches used only during development/testing.
+test_firmwares/
+blink.hex
