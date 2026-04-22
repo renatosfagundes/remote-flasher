@@ -32,7 +32,7 @@ void setup() {
 
 // === Engine task: fast (20 Hz) — gauges and analog values ===
 TASK(EngineTask) {
-    t_engine += 0.05;
+    t_engine += 0.2;  // 200 ms per tick (5 Hz) — matches engineAlarm CYCLETIME
 
     // Simulate driving: throttle varies, speed follows
     g_throttle = 50.0 + 40.0 * sin(t_engine * 0.3);

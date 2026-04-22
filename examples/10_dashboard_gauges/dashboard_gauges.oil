@@ -1,4 +1,7 @@
-// Example 10: Dashboard Gauges — all gauge signals at 20 Hz
+// Example 10: Dashboard Gauges — all gauge signals at 5 Hz
+//
+// Rate capped at 5 Hz (200 ms) to keep the lab camera alive — FTDI and
+// BRIO share a USB hub on bench PCs. See README / manual.
 OIL_VERSION = "2.5" : "dashboard_gauges";
 
 CPU test {

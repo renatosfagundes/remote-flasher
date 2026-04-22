@@ -1,4 +1,7 @@
 // Example 12: Dashboard Doors — interactive doors via VirtualIO + Dashboard
+//
+// Rate capped at 5 Hz (200 ms) to keep the lab camera alive — see
+// README / manual "Serial transmit rate vs. camera".
 OIL_VERSION = "2.5" : "dashboard_doors";
 
 CPU test {
@@ -27,8 +30,8 @@ CPU test {
     COUNTER = SystemCounter;
     ACTION = ACTIVATETASK { TASK = UpdateIO; };
     AUTOSTART = TRUE {
-      ALARMTIME = 100;
-      CYCLETIME = 100;
+      ALARMTIME = 200;
+      CYCLETIME = 200;
       APPMODE = stdAppmode;
     };
   };

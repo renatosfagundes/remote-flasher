@@ -1,4 +1,7 @@
-// Example 14: Odometer & Average Speed Test — 20 Hz
+// Example 14: Odometer & Average Speed Test — 5 Hz
+//
+// Rate capped at 5 Hz (200 ms) so the lab camera survives — see README
+// / manual "Serial transmit rate vs. camera".
 OIL_VERSION = "2.5" : "odo_avgspeed_test";
 
 CPU test {
@@ -26,8 +29,8 @@ CPU test {
     COUNTER = SystemCounter;
     ACTION = ACTIVATETASK { TASK = SendGauges; };
     AUTOSTART = TRUE {
-      ALARMTIME = 50;
-      CYCLETIME = 50;
+      ALARMTIME = 200;
+      CYCLETIME = 200;
       APPMODE = stdAppmode;
     };
   };

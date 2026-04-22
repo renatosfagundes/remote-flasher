@@ -20,7 +20,7 @@
 #include "DashboardSignals.h"
 #include <math.h>
 
-static const float DT_SEC = 0.05f;  // 20 Hz — matches gaugeAlarm CYCLETIME
+static const float DT_SEC = 0.2f;  // 5 Hz (200 ms) — matches gaugeAlarm CYCLETIME
 
 static const float T_SINE     = 2.0f;
 static const float T_TRIANGLE = 3.0f;

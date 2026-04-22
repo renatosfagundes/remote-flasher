@@ -1,4 +1,10 @@
-// Example 13: Dashboard Full — 3 tasks at different rates
+// Example 13: Dashboard Full — 3 tasks at different rates (all ≤ 5 Hz)
+//
+// Engine/indicator/door tasks all send signals over serial. Their
+// CYCLETIMEs were picked to stay under the 5 Hz-per-task ceiling that
+// keeps the shared FTDI/BRIO USB hub on the lab PCs stable — if the
+// sum of all three tasks saturates the FTDI adapter, the camera feed
+// starves and eventually hits ERROR_GEN_FAILURE. See README / manual.
 OIL_VERSION = "2.5" : "dashboard_full";
 
 CPU test {
@@ -22,13 +28,13 @@ CPU test {
 
   APPMODE stdAppmode {};
 
-  // Engine: 20 Hz (50ms)
+  // Engine: 5 Hz (200 ms) — capped for camera/USB-hub stability.
   ALARM engineAlarm {
     COUNTER = SystemCounter;
     ACTION = ACTIVATETASK { TASK = EngineTask; };
     AUTOSTART = TRUE {
-      ALARMTIME = 50;
-      CYCLETIME = 50;
+      ALARMTIME = 200;
+      CYCLETIME = 200;
       APPMODE = stdAppmode;
     };
   };

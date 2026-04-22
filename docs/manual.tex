@@ -1624,6 +1624,12 @@ Todos os modos incluem:
 Apenas uma conexão serial pode alimentar o Dashboard por vez. Ao marcar ``Feed Dashboard'' em um painel, qualquer outro painel que estava alimentando é desconectado automaticamente.
 \end{notabox}
 
+\begin{notabox}[Taxa de transmissão vs.\ câmera]
+Nas bancadas do laboratório, os adaptadores FTDI das placas e a webcam BRIO normalmente compartilham o mesmo controlador USB do PC. Cada transmissão serial contínua em alta taxa satura o hub USB o suficiente para que o pipeline Media Foundation da câmera cancele frames (\texttt{MF\_E\_OPERATION\_CANCELLED}, \texttt{-2147483638}); após alguns ciclos de Open/Close a câmera pode entrar em \texttt{ERROR\_GEN\_FAILURE} (\texttt{0x8007001F}), o que só é recuperável com replug físico do cabo USB.
+
+\textbf{Recomendação:} mantenha \texttt{dashFlush()} em \textbf{{$\leq$} 5\,Hz} (um envio a cada 200\,ms) quando usar Dashboard ou Plotter com a câmera ligada. Todos os exemplos de 09 a 16 no repositório já foram ajustados para 5\,Hz; ao derivar um firmware próprio, mantenha o \texttt{CYCLETIME} $\geq 200$\,ms. Correção de longo prazo: mover o cabo USB da BRIO para uma porta em outro controlador raiz.
+\end{notabox}
+
 
 \section{Plotter Serial --- Gráficos em Tempo Real}
 

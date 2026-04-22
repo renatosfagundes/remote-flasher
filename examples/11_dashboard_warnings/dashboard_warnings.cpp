@@ -35,7 +35,7 @@ void setup() {
 }
 
 TASK(SendWarnings) {
-    t += 0.05;
+    t += 0.2;  // 200 ms per tick (5 Hz)
 
     // Send a base speed so the dashboard doesn't look empty
     dashSend("speed", 60.0 + 30.0 * sin(t * 0.3));

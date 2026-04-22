@@ -130,6 +130,8 @@ Enable **Feed Dashboard** on any serial panel to route incoming signals.
 
 Firmware integration uses the `DashboardSignals` library from `arduino_lib/DashboardSignals/` — see examples 09–14.
 
+> **⚠ Serial transmit rate vs. camera feed.** On lab PCs where the FTDI adapters and the BRIO webcam share a USB host controller, heavy serial output can starve the camera's MSMF pipeline and drop it into `ERROR_GEN_FAILURE`. Keep `dashFlush()` calls to **≤ 5 Hz** (one flush per ~200 ms) when using the Dashboard/Plotter with the camera live. All shipped `examples/09_dashboard_*` through `examples/16_plotter_*` have been set to 5 Hz for this reason — if you fork one of them, keep the cycle time at 200 ms or slower. Longer-term fix: move the BRIO cable to a USB port on a different root controller.
+
 ### 6. SSH Terminal + File Upload
 
 Run commands on the remote PC and upload files or entire folders via SFTP with a progress bar.

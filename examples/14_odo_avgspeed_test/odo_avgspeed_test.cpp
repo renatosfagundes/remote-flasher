@@ -23,7 +23,7 @@
 #include "DashboardSignals.h"
 
 // Task period — must match gaugeAlarm CYCLETIME in the .oil file.
-static const float DT_SEC = 0.05f;  // 20 Hz
+static const float DT_SEC = 0.2f;  // 5 Hz (200 ms)
 
 // Speed plateau sequence (km/h). Each value is held for PLATEAU_SECS.
 static const float SPEED_PLATEAUS[] = { 0, 60, 120, 60, 0, 90, 150, 90 };

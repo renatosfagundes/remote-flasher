@@ -555,23 +555,30 @@ class VPNTab(QWidget):
                         self._health_result.emit(short, board_name, "ok")
                         continue
 
-                    # Check if the port appears in output with a response
+                    # Whitelist, not blacklist: the port's line must *explicitly*
+                    # contain " OK" (word-boundary, case-sensitive, matching the
+                    # test_ttl.ps1 output format `COMxx MCUn OK`). Anything else
+                    # — "CM E00" controller errors, "Exceção ... não existe"
+                    # port-missing exceptions, blank, or port absent from output
+                    # — is a fail. The previous keyword-blacklist silently passed
+                    # "CM E00" because it contained none of {erro,timeout,falha,
+                    # fail,não} and so marked dead boards as OK.
+                    import re
                     port_lower = reset_port.lower()
-                    if port_lower in output_lower:
-                        # Port found in output — check if it got a response
-                        # Lines with the port that DON'T contain error/timeout = OK
-                        port_lines = [l for l in output.splitlines()
-                                      if port_lower in l.lower()]
-                        has_error = any("erro" in l.lower() or "timeout" in l.lower()
-                                        or "falha" in l.lower() or "fail" in l.lower()
-                                        or "não" in l.lower()
-                                        for l in port_lines)
-                        if has_error:
-                            self._health_result.emit(short, board_name, "fail")
-                            self._log_signal.emit(
-                                f"[Health] !! {short} {board_name} ({reset_port}): FROZEN / not responding")
-                        else:
-                            self._health_result.emit(short, board_name, "ok")
+                    port_lines = [l for l in output.splitlines()
+                                  if port_lower in l.lower()]
+                    ok_re = re.compile(r"\bOK\b")
+                    is_ok = any(ok_re.search(l) for l in port_lines)
+                    if is_ok:
+                        self._health_result.emit(short, board_name, "ok")
+                    elif port_lines:
+                        # Port mentioned but no OK — grab the first line
+                        # (minus the port prefix) as a compact reason.
+                        first = port_lines[0].strip()
+                        reason = first
+                        self._health_result.emit(short, board_name, "fail")
+                        self._log_signal.emit(
+                            f"[Health] !! {short} {board_name} ({reset_port}): {reason}")
                     else:
                         # Port not mentioned at all — likely not responding
                         self._health_result.emit(short, board_name, "fail")

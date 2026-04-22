@@ -8,6 +8,8 @@ Usage:
 """
 import argparse
 import io
+import os
+import subprocess
 import sys
 import threading
 import time
@@ -28,7 +30,6 @@ except AttributeError:  # pre-3.7 fallback
 # cleanly *before* ser.close() runs on the main thread — avoiding the
 # pyserial race where close() nulls out _overlapped_read while the
 # reader is mid-read, leaking the COM handle on Windows.
-# LOCAL ONLY — adds no new remote PC activity.
 _stop = threading.Event()
 
 
@@ -39,6 +40,9 @@ def _reader(ser):
     SSH channel was closed (Close Serial on the client), the next flush
     will raise BrokenPipeError (OSError) and break us out of the loop,
     which signals the main thread to shut down and release the COM port.
+    Without this periodic flush, an idle Arduino → no prints → pipe break
+    goes unnoticed → python lingers → COM port stays held → Acesso Negado
+    on the next Open Serial.
     """
     try:
         while not _stop.is_set():
@@ -58,7 +62,15 @@ def _reader(ser):
 
 
 def _writer(ser):
-    """Read from stdin and write to serial."""
+    """Read from stdin and write to serial.
+
+    Recognizes a special `__RF_QUIT__` marker from the Remote Flasher
+    client: when Close Serial is clicked, the client sends that line and
+    we trigger a clean shutdown here (set _stop + cancel pyserial's
+    blocking read) so main's finally runs ser.close() promptly — without
+    the client having to Force-kill us (which leaves the FTDI USB endpoint
+    half-released and disturbs the camera bus on the next cycle).
+    """
     try:
         buf = ""
         while not _stop.is_set():
@@ -66,14 +78,90 @@ def _writer(ser):
             if not ch:
                 break
             if ch in ("\n", "\r"):
+                if buf == "__RF_QUIT__":
+                    _stop.set()
+                    try:
+                        ser.cancel_read()
+                    except Exception:
+                        pass
+                    break
                 if buf:
                     ser.write((buf + "\r\n").encode("utf-8"))
                     ser.flush()
-                    buf = ""
+                buf = ""
             else:
                 buf += ch
     except (serial.SerialException, OSError, EOFError):
         pass
+
+
+def _reap_port_holders(port: str):
+    """Kill any OTHER process still holding the requested COM port.
+
+    "Acesso negado" on open is almost always a prior serialterm.py that
+    died ungracefully OR an avrdude from a failed/cancelled flash that
+    never got to close its -P handle. Rather than waiting up to 5 min
+    for the scheduled janitor to notice, reap either holder inline so
+    the retry below can succeed.
+
+    Port-scoped: only matches serialterm/avrdude bound to this exact COM.
+    Excludes self via $me. Camera pythons (no 'serialterm' in args) are
+    never matched, so the reap can't accidentally kill the webcam feed.
+
+    Note: with the Remote Flasher client's cooperative shutdown
+    (`__RF_QUIT__` marker + channel close, no Force kill), this reap
+    should essentially never fire in normal use. It's kept as a safety
+    net for (a) avrdude crashes during flash and (b) legacy Flasher
+    versions that still Force-kill.
+    """
+    my_pid = os.getpid()
+    script = (
+        "$me = %d; "
+        "Get-CimInstance Win32_Process | "
+        "Where-Object { "
+        "  $_.ProcessId -ne $me -and $_.CommandLine -and ("
+        "    ($_.CommandLine -like '*serialterm*' -and "
+        "     $_.CommandLine -match '--port\\s+%s\\b') -or "
+        "    ($_.Name -eq 'avrdude.exe' -and "
+        "     $_.CommandLine -match '-P\\s+%s\\b')"
+        "  )"
+        "} | ForEach-Object { "
+        "  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue "
+        "}"
+    ) % (my_pid, port, port)
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            timeout=5, capture_output=True,
+        )
+    except Exception:
+        pass
+
+
+def _open_port_with_retry(port: str, baudrate: int):
+    """Open port; on 'Acesso negado' / PermissionError, reap stale
+    holders and retry once. Returns the open Serial or raises."""
+    try:
+        return serial.Serial(port, baudrate, timeout=1)
+    except serial.SerialException as e:
+        msg = str(e).lower()
+        denied = (
+            "acesso negado" in msg
+            or "access is denied" in msg
+            or "permissionerror" in msg
+            or "permission" in msg
+        )
+        if not denied:
+            raise
+        print(
+            f"[serialterm] {port} denied — reaping stale serialterm holders and retrying...",
+            flush=True,
+        )
+        _reap_port_holders(port)
+        # Give the OS ~1.5 s to finalize the handle release after Stop-Process;
+        # FTDI drivers sometimes take a moment to drop the last reference.
+        time.sleep(1.5)
+        return serial.Serial(port, baudrate, timeout=1)
 
 
 def main():
@@ -86,7 +174,7 @@ def main():
     sys.stdout.flush()
 
     try:
-        ser = serial.Serial(args.port, args.baudrate, timeout=1)
+        ser = _open_port_with_retry(args.port, args.baudrate)
     except serial.SerialException as e:
         print(f"ERROR: Could not open {args.port}: {e}", file=sys.stderr)
         sys.exit(1)
@@ -99,12 +187,16 @@ def main():
     reader_thread.start()
     writer_thread.start()
 
-    # Exit as soon as EITHER thread dies:
-    #   - reader dying  = serial error or broken stdout (SSH close while
-    #                     data flowing, caught by print/flush raising)
-    #   - writer dying  = stdin EOF (SSH channel closed while Arduino idle)
+    # Main's exit condition is reader-death ONLY. Writer death (stdin EOF)
+    # is common on Windows OpenSSH — cmd.exe's stdin handle is flaky
+    # across sessions — and treating it as "time to shut down" caused
+    # immediate exit on every 3rd-or-later Open Serial. Reader death is
+    # the reliable signal: it fires when the client closes the channel
+    # (stdout flush raises BrokenPipeError) OR when the port goes away.
+    # The client also sends `__RF_QUIT__` on Close, which the writer
+    # thread turns into a clean shutdown — so we never rely on stdin EOF.
     try:
-        while reader_thread.is_alive() and writer_thread.is_alive():
+        while reader_thread.is_alive():
             time.sleep(0.1)
     except KeyboardInterrupt:
         pass
@@ -116,7 +208,6 @@ def main():
         #     AttributeError: 'NoneType' object has no attribute 'hEvent'
         # The exception escapes mid-close and leaves Windows' COM handle
         # in limbo, so the next Open Serial sees "Acesso negado".
-        # LOCAL ONLY — no remote PC interaction beyond what master had.
         _stop.set()
         try:
             ser.cancel_read()
