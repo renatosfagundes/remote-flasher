@@ -549,3 +549,182 @@ class SerialWorker(QThread):
                 self._channel.close()
             except Exception:
                 pass
+
+
+# -------------------------------------------------------------------------
+# Local mode workers — used when the selected PC has flash_method='local'
+# (currently only the aneb-sim simulator entry).  Their public API is a
+# strict superset of SSHWorker / SerialWorker so the flash / serial /
+# CAN tabs can swap workers based on flash_method without touching their
+# UI code.
+# -------------------------------------------------------------------------
+
+
+class LocalCommandWorker(QThread):
+    """Run a shell command on the local machine in a background thread.
+
+    Drop-in replacement for SSHWorker — same constructor signature
+    (host/user/password are accepted-and-ignored so callers don't need
+    a separate code path) and the same output / finished_signal API."""
+
+    output = Signal(str)
+    finished_signal = Signal(str)
+
+    def __init__(self, host, user, password, command,
+                 parent=None, timeout=120, use_pty=False):
+        super().__init__(parent)
+        # host/user/password kept for signature compatibility with SSHWorker
+        self.host = host
+        self.user = user
+        self.password = password
+        self.command = command
+        self.timeout = timeout
+        self.use_pty = use_pty   # ignored — local stdout is line-buffered fine
+        self._stop = False
+        self._proc = None
+
+    def run(self):
+        import subprocess
+        try:
+            self.output.emit(f"[LOCAL] Running on 127.0.0.1: {self.command}")
+            # shell=True so the same `&` chains used in the SSH paths work
+            # unchanged on cmd.exe.  CREATE_NO_WINDOW prevents a black
+            # console window flashing up for each subprocess.
+            creationflags = 0
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                creationflags = subprocess.CREATE_NO_WINDOW
+            self._proc = subprocess.Popen(
+                self.command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,
+                creationflags=creationflags,
+            )
+            assert self._proc.stdout is not None
+            buf = b""
+            for raw in iter(self._proc.stdout.readline, b""):
+                if self._stop:
+                    self._proc.terminate()
+                    break
+                buf = raw
+                try:
+                    line = buf.decode("utf-8")
+                except UnicodeDecodeError:
+                    line = buf.decode("cp850", errors="replace")
+                # Strip ANSI + CR/LF, drop empty lines so the log doesn't fill
+                # with avrdude's progress-bar overwrites.
+                line = _ANSI_RE.sub("", line).rstrip("\r\n")
+                if line:
+                    self.output.emit(line)
+            try:
+                self._proc.wait(timeout=self.timeout)
+                self.finished_signal.emit(str(self._proc.returncode))
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self.output.emit(f"[LOCAL] Command timed out after {self.timeout}s")
+                self.finished_signal.emit("-1")
+        except Exception as e:
+            self.output.emit(f"[LOCAL ERROR] {e}")
+            self.finished_signal.emit("-1")
+
+    def stop(self):
+        self._stop = True
+        if self._proc and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+
+
+class LocalSerialWorker(QThread):
+    """Open a serial port directly with pyserial in a background thread.
+
+    Drop-in replacement for SerialWorker (which spawns serialterm.py over
+    SSH).  remote_dir is accepted-and-ignored for signature compat."""
+
+    output = Signal(str)
+    finished_signal = Signal()
+
+    def __init__(self, host, user, password, com_port, baudrate, remote_dir, parent=None):
+        super().__init__(parent)
+        # Compat fields (unused locally)
+        self.host = host
+        self.user = user
+        self.password = password
+        self.remote_dir = remote_dir
+        self.com_port = com_port
+        self.baudrate = int(baudrate) if baudrate else 115200
+        self._running = True
+        self._serial = None
+
+    def run(self):
+        try:
+            import serial as pyserial
+        except ImportError:
+            self.output.emit("[LOCAL SERIAL ERROR] pyserial not installed")
+            self.finished_signal.emit()
+            return
+
+        try:
+            self.output.emit(
+                f"[Serial] Opening {self.com_port} @ {self.baudrate} (local)..."
+            )
+            self._serial = pyserial.Serial(
+                self.com_port,
+                baudrate=self.baudrate,
+                timeout=0.05,
+            )
+            self.output.emit(f"[Serial] Connected to {self.com_port}")
+            buf = b""
+            while self._running:
+                try:
+                    n = self._serial.in_waiting
+                except (OSError, pyserial.SerialException):
+                    break
+                if n:
+                    try:
+                        chunk = self._serial.read(n)
+                    except (OSError, pyserial.SerialException):
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        try:
+                            text = line.decode("utf-8")
+                        except UnicodeDecodeError:
+                            text = line.decode("cp850", errors="replace")
+                        text = text.rstrip("\r")
+                        if text:
+                            self.output.emit(text)
+                else:
+                    self.msleep(20)
+            # Flush any trailing partial line
+            if buf:
+                try:
+                    text = buf.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = buf.decode("cp850", errors="replace")
+                text = text.rstrip("\r\n")
+                if text:
+                    self.output.emit(text)
+        except Exception as e:
+            self.output.emit(f"[LOCAL SERIAL ERROR] {e}")
+        finally:
+            try:
+                if self._serial and self._serial.is_open:
+                    self._serial.close()
+            except Exception:
+                pass
+            self.finished_signal.emit()
+
+    def send_data(self, text: str):
+        """Send a line over the serial port (mirrors SerialWorker)."""
+        if self._serial and self._serial.is_open:
+            try:
+                self._serial.write((text + "\n").encode("utf-8"))
+            except Exception:
+                pass
+
+    def stop(self):
+        self._running = False

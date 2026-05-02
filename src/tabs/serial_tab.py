@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 from lab_config import COMPUTERS, SERIAL_DEFAULTS
 from settings import get_remote_user_dir
 from widgets import LogWidget, ToggleSwitch
-from workers import SerialWorker, SCPWorker
+from workers import SerialWorker, SCPWorker, LocalSerialWorker
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +569,13 @@ class SerialPanel(QFrame):
         self.port_combo.setEnabled(False)
         self.baudrate.setEnabled(False)
         self.remote_dir.setEnabled(False)
-        self.serial_worker = SerialWorker(
+        # For local PCs (aneb-sim simulator) skip the SSH+serialterm.py
+        # path entirely and open pyserial directly.  send_data() and
+        # stop() match SerialWorker's API so the rest of the panel
+        # treats them identically.
+        worker_cls = (LocalSerialWorker if pc.get("flash_method") == "local"
+                      else SerialWorker)
+        self.serial_worker = worker_cls(
             pc["host"], pc["user"], pc["password"], port, baud, remote_dir
         )
         self.serial_worker.output.connect(self._on_serial_output)

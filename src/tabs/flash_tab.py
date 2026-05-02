@@ -1,5 +1,7 @@
 """Firmware flash tab."""
 import os
+import shutil
+from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -11,8 +13,44 @@ from PySide6.QtWidgets import (
 from lab_config import COMPUTERS, AVRDUDE_DEFAULTS, REMOTE_BASE_DIR, REMOTE_SCRIPTS_DIR
 from settings import get_remote_user_dir
 from widgets import LogWidget, make_log_with_clear
-from workers import SSHWorker, SCPWorker, PortsFetchWorker
+from workers import SSHWorker, SCPWorker, PortsFetchWorker, LocalCommandWorker
 from ports_sync import apply_overrides, save_cache, REMOTE_PORTS_PATH
+
+
+# -------------------------------------------------------------------------
+# Local-mode helpers (used when flash_method == 'local', e.g. aneb-sim
+# simulator).  Find avrdude.exe and its config in standard install
+# locations so the local path doesn't need a remote_dir / remote scripts.
+# -------------------------------------------------------------------------
+
+_AVRDUDE_SEARCH = (
+    r"C:\Program Files (x86)\Arduino\hardware\tools\avr\bin\avrdude.exe",
+    r"C:\Program Files\Arduino\hardware\tools\avr\bin\avrdude.exe",
+    r"C:\msys64\mingw64\bin\avrdude.exe",
+    r"C:\msys64\usr\bin\avrdude.exe",
+)
+
+
+def _find_avrdude():
+    found = shutil.which("avrdude") or shutil.which("avrdude.exe")
+    if found:
+        return found
+    for p in _AVRDUDE_SEARCH:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _find_avrdude_conf(avrdude_exe):
+    """Find avrdude.conf relative to a given avrdude binary.  Arduino's
+    bundled build expects bin/../etc/avrdude.conf and won't find it via
+    the empty default when launched from a non-Arduino working dir."""
+    exe = Path(avrdude_exe)
+    for c in (exe.parent.parent / "etc" / "avrdude.conf",
+              exe.parent / "avrdude.conf"):
+        if c.is_file():
+            return str(c)
+    return None
 
 
 class FlashTab(QWidget):
@@ -438,6 +476,15 @@ class FlashTab(QWidget):
 
     def _launch_flash_worker(self, op_id, pc, ecu_port, remote_dir, hex_name,
                              board, release_ports):
+        # ---- Local mode (aneb-sim simulator) ---------------------------
+        # No SCP, no SSH, no flash.py.  We have the .hex on disk already
+        # and the simulator does its own DTR-pulse reset on TCP/COM
+        # connect — so just shell out to a local avrdude.
+        if pc.get("flash_method") == "local":
+            self._launch_local_flash_worker(op_id, pc, ecu_port, hex_name,
+                                            board, release_ports)
+            return
+
         # For PCs using the flash.py method, keep the remote copy of
         # flash.py in sync with our local bundle — size-compared so an
         # unchanged file is a cheap stat+skip. Without this the remote
@@ -500,6 +547,74 @@ class FlashTab(QWidget):
         # kicks in; sentinel short-circuit bails earlier on clean
         # completion.
         worker = SSHWorker(pc["host"], pc["user"], pc["password"], cmd, timeout=35, use_pty=True)
+        worker.output.connect(lambda m, op=op_id: self._on_flash_output(op, m))
+        worker.finished_signal.connect(
+            lambda s, op=op_id, rp=release_ports, p=pc, port=ecu_port:
+                self._on_flash_done(s, op, rp, p, port)
+        )
+        self._workers.append(worker)
+        self._flash_worker = worker
+        self._flash_port = ecu_port
+        self._flash_pc = pc
+        self._flash_is_writing = False
+        self._flash_cancelled = False
+        self.cancel_btn.setEnabled(True)
+        worker.start()
+
+    def _launch_local_flash_worker(self, op_id, pc, ecu_port, hex_name,
+                                   board, release_ports):
+        """Flash a local target (aneb-sim simulator) directly via avrdude.
+
+        The simulator's TCP UART server triggers a chip reset whenever
+        a client connects to its socket -- so opening the COM port at
+        115 200 baud (which the com0com bridge forwards to the TCP
+        socket) gives us the same DTR-pulse semantics as a real Arduino,
+        no separate reset step needed.
+
+        We also need to make sure the aneb-sim UI's pyserial bridge
+        isn't holding the COM port open at the moment we shell out --
+        otherwise avrdude sees 'access denied' on the port.  The user
+        is responsible for clicking 'Pause Bridge' (or just 'Flash
+        through the aneb-sim UI') before launching from here for now;
+        a future improvement could detect the bridge and pause it
+        automatically over the JSON-Lines protocol.
+        """
+        # The .hex file is local — no SCP needed.  Resolve absolute path
+        # so avrdude doesn't get confused by the cwd.
+        hex_path = self.hex_path.text().strip()
+        if not os.path.isabs(hex_path):
+            hex_path = os.path.abspath(hex_path)
+        if not os.path.isfile(hex_path):
+            self._log(op_id, f"[Flash] Hex file not found: {hex_path}")
+            self._on_flash_done("-1", op_id, release_ports, pc, ecu_port)
+            return
+
+        avrdude = _find_avrdude()
+        if not avrdude:
+            self._log(op_id,
+                      "[Flash] avrdude.exe not found.  Install Arduino IDE "
+                      "or add avrdude to PATH.")
+            self._on_flash_done("-1", op_id, release_ports, pc, ecu_port)
+            return
+        avrdude_conf = _find_avrdude_conf(avrdude)
+
+        cmd_parts = [f'"{avrdude}"']
+        if avrdude_conf:
+            cmd_parts += ["-C", f'"{avrdude_conf}"']
+        cmd_parts += [
+            "-v",
+            "-p", AVRDUDE_DEFAULTS["mcu"],
+            "-c", AVRDUDE_DEFAULTS["programmer"],
+            "-b", AVRDUDE_DEFAULTS["baudrate"],
+            "-P", ecu_port,
+            "-U", f'flash:w:"{hex_path}":i',
+        ]
+        cmd = " ".join(cmd_parts)
+        self._log(op_id, f"[Flash] Executing locally: {cmd}")
+
+        worker = LocalCommandWorker(
+            pc["host"], pc["user"], pc["password"], cmd, timeout=60,
+        )
         worker.output.connect(lambda m, op=op_id: self._on_flash_output(op, m))
         worker.finished_signal.connect(
             lambda s, op=op_id, rp=release_ports, p=pc, port=ecu_port:

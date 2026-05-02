@@ -394,6 +394,20 @@ class CANTab(QWidget):
             return
         board_name, bus, port, pc = self._apply_queue[0]
 
+        # Local PCs (aneb-sim simulator) only have one logical CAN bus
+        # today and there's no AT-command selector to switch -- the
+        # simulator just routes every chip's MCP2515 to the same bus.
+        # Treat the apply as immediately successful so the UI shows
+        # CAN <bus> as the active selection.  When future aneb-sim
+        # builds support multiple buses this branch can dispatch over
+        # the existing JSON-Lines protocol instead.
+        if pc.get("flash_method") == "local":
+            self.log.append_log(
+                f"[CAN] {board_name} -> CAN {bus} (aneb-sim, single-bus model)")
+            # Match the success status string the SSH path emits ("0").
+            self._on_apply_done(board_name, bus, "0")
+            return
+
         cmd = (
             f'powershell -Command "'
             f"$s = New-Object System.IO.Ports.SerialPort {port},19200,None,8,One; "
@@ -463,8 +477,12 @@ class CANTab(QWidget):
         pc = self._get_pc_cfg()
         boards = pc.get("boards", {})
         any_queried = False
-        for board_name in ["Placa 01", "Placa 02", "Placa 03", "Placa 04"]:
-            port = boards.get(board_name, {}).get("can_selector_port")
+        # Iterate over the PC's actual boards rather than a hard-coded
+        # list — that way variants like 'Placa 01 (aneb-sim)' (the
+        # local simulator board) are queried alongside 'Placa 01'..04
+        # on real lab PCs.
+        for board_name, board_cfg in boards.items():
+            port = board_cfg.get("can_selector_port") if board_cfg else None
             if port:
                 self._query_board(board_name, port, pc)
                 any_queried = True
@@ -473,6 +491,18 @@ class CANTab(QWidget):
 
     def _query_board(self, board_name, port, pc):
         """Send AT BI + AT FV + AT BV to a board to identify it."""
+        # Local PCs (aneb-sim simulator) don't expose an AT-command
+        # interface -- the board id / firmware version / board version
+        # are static for the simulator.  Synthesize a response in the
+        # same `BI:<id>|FV:<ver>|BV:<rev>` format the real boards return
+        # so the rest of the query/display flow doesn't need to know
+        # whether the board was real or simulated.
+        if pc.get("flash_method") == "local":
+            self.log.append_log(f"[CAN] Querying {board_name} (aneb-sim)...")
+            self._pending_output[board_name] = "BI:aneb-sim|FV:1.0|BV:ANEB v1.1"
+            self._on_query_done(board_name, "0")
+            return
+
         # Helper: send cmd, wait, read all available bytes in a loop
         # Using a PS function to avoid response bleed between commands
         cmd = (

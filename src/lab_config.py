@@ -3,6 +3,7 @@ Lab hardware configuration — computers, boards, COM ports.
 Sensitive data (IPs, credentials) are imported from secrets.py at the project root.
 Copy secrets.example.py to secrets.py and fill in your lab's values.
 """
+import re
 import sys
 import os
 
@@ -127,3 +128,101 @@ try:
 except Exception:
     # Never let cache load break the app — fall back to lab_config defaults.
     pass
+
+
+# -------------------------------------------------------------------------
+# aneb-sim simulator integration (optional, Windows-only).
+#
+# When the aneb-sim simulator is set up on the local machine
+# (scripts\setup_com.bat run, com0com pairs created with friendly names),
+# expose it as a 'Localhost (aneb-sim)' computer entry so the existing
+# Flash / Serial / CAN tabs can target it just like a real lab PC.
+#
+# Discovery is via the Windows registry: HKLM\SYSTEM\CurrentControlSet\
+# Enum\COM0COM\PORT\<CNCBn>\FriendlyName values like 'ECU1 (aneb-sim)'
+# are mapped back to chip names.  Boards / ECU layout matches the
+# aneb-sim hardware model (1 ANEB v1.1 board = 4 ECUs + 1 MCU + 1 CAN
+# bus); when future aneb-sim builds expose multiple physical-board
+# models the loop below extends naturally to additional Placa entries.
+#
+# flash_method='local' is a new mode handled by tabs/flash_tab.py and
+# friends — they bypass SSH/SCP and run avrdude/pyserial directly.
+# -------------------------------------------------------------------------
+
+def _localhost_simulator():
+    """Return a COMPUTERS-style entry for the aneb-sim simulator if it's
+    installed on this machine, or None.
+
+    Friendly-name parsing is strict: only ports tagged 'ECU<n> (aneb-sim)'
+    or 'MCU (aneb-sim)' (the user-side ports — the bridge-side
+    'ECU1 (aneb-sim bridge)' ports are deliberately ignored)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+    except ImportError:
+        return None
+
+    chip_to_com: dict[str, str] = {}
+    base = r"SYSTEM\CurrentControlSet\Enum\COM0COM\PORT"
+    name_re = re.compile(r"^([A-Za-z]+\d*)\s+\(aneb-sim\)\s*$")
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base) as root:
+            i = 0
+            while True:
+                try:
+                    sub = winreg.EnumKey(root, i)
+                except OSError:
+                    break
+                i += 1
+                try:
+                    with winreg.OpenKey(root, sub) as port:
+                        friendly, _ = winreg.QueryValueEx(port, "FriendlyName")
+                        with winreg.OpenKey(port, "Device Parameters") as dp:
+                            com, _ = winreg.QueryValueEx(dp, "PortName")
+                except OSError:
+                    continue
+                m = name_re.match(friendly)
+                if m:
+                    chip_to_com[m.group(1).upper()] = com
+    except OSError:
+        return None
+
+    ecu_ports = [chip_to_com.get(f"ECU{i}") for i in (1, 2, 3, 4)]
+    if not all(ecu_ports):
+        # Setup is incomplete (e.g. setup_com.bat hasn't been run yet,
+        # or pyserial / com0com isn't installed).  Skip the entry —
+        # better to omit it than expose a half-broken target.
+        return None
+
+    return {
+        "host": "127.0.0.1",
+        "user": "",
+        "password": "",
+        "camera_url": "",
+        # New flash_method handled by flash_tab/serial_tab/can_tab —
+        # runs avrdude / pyserial locally instead of via SSH.
+        "flash_method": "local",
+        "boards": {
+            "Placa 01 (aneb-sim)": {
+                "ecu_ports": ecu_ports,
+                # The simulator resets the chip whenever a TCP/COM
+                # client connects to its UART (DTR-pulse emulation).
+                # No separate Prolific-helper port — point both at the
+                # first ECU port so the existing UI doesn't see None.
+                "reset_port": ecu_ports[0],
+                "reset_script": None,
+                # CAN bus selection is a no-op on the sim (only one
+                # bus today).  Use the MCU port as a placeholder so
+                # the AT-command flow in can_tab doesn't crash on
+                # missing keys; the local branch in can_tab returns
+                # immediately for flash_method=='local'.
+                "can_selector_port": chip_to_com.get("MCU", ecu_ports[0]),
+            }
+        },
+    }
+
+
+_sim_pc = _localhost_simulator()
+if _sim_pc:
+    COMPUTERS["Localhost (aneb-sim)"] = _sim_pc
