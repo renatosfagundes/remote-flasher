@@ -192,6 +192,9 @@ O \textbf{Remote Firmware Flasher} é uma aplicação desktop (PySide6) que perm
   \item Câmera ao vivo para visualizar as placas
   \item Configuração automática do ambiente de desenvolvimento (Setup)
   \item Guias de integração com Notepad++ e VSCode
+  \item \textbf{Modo local (aneb-sim)}: gravar e monitorar a placa
+        simulada \texttt{aneb-sim} na própria máquina, sem VPN nem SSH,
+        usando os mesmos painéis de Flash, Serial e CAN (v2.4.0)
 \end{itemize}
 
 % === 2. Instalação ===============================================
@@ -382,6 +385,50 @@ verificações automaticamente:
     envolvidas (ECU ou reset) estiver aberta em um painel da aba
     \textbf{Serial}, um diálogo bloqueante informa qual porta e qual ação
     foi cancelada. Feche o painel serial e tente novamente.
+\end{itemize}
+
+% === 6.5. Modo local (aneb-sim) ====================================
+\section{Modo local: simulador aneb-sim}
+
+A partir da versão 2.4.0, o Remote Firmware Flasher detecta automaticamente o simulador \textbf{aneb-sim} instalado na própria máquina e o expõe como um ``PC'' adicional na aba \textbf{Flash} (e nas demais), com o nome \texttt{Localhost (aneb-sim)}. Isso permite gravar firmware, abrir terminais e configurar barramentos CAN \emph{sem VPN, sem SSH e sem placa física}.
+
+\subsection{Pré-requisitos}
+
+\begin{enumerate}[nosep]
+  \item Instalar e iniciar o aneb-sim. As pastas-padrão estão em\\
+        \texttt{C:\textbackslash dev\textbackslash aneb-sim}.
+  \item Executar \texttt{scripts\textbackslash setup\_com.bat} uma vez (com privilégios de administrador) para criar os pares com0com nomeados \texttt{ECU1 (aneb-sim)} … \texttt{MCU (aneb-sim)}.
+  \item Iniciar a UI do simulador com \texttt{scripts\textbackslash run-ui.sh}. O Remote Flasher só lista o entry \texttt{Localhost (aneb-sim)} se as 4 portas ECU forem encontradas no registro.
+\end{enumerate}
+
+\subsection{Fluxo de gravação local}
+
+Selecione \texttt{Localhost (aneb-sim)} no combo \textbf{Computer}, escolha uma das ECUs (\texttt{Placa 01 (aneb-sim)} → COM11 \dots COM17 conforme o registro), o arquivo \texttt{.hex} desejado e clique em \textbf{Upload + Reset + Flash}. Diferenças em relação ao fluxo remoto:
+
+\begin{itemize}[nosep]
+  \item \textbf{Upload é ignorado}: o \texttt{.hex} já está no disco local — não há SCP.
+  \item \textbf{Reset é via TCP}: o engine simula um pulso de DTR ao receber uma conexão na porta de flasher (\texttt{8600+i}), substituindo a função do script \texttt{reset.ps1} usado nos PCs remotos.
+  \item \textbf{Flash é via \texttt{-P net:127.0.0.1:8600+i}}: o \texttt{avrdude} se conecta diretamente ao servidor TCP UART do simulador. Abrir o socket dispara o reset e a sincronização STK500 — flash e reset são uma única sessão atômica.
+  \item \textbf{Verificação de VPN é ignorada}: tudo roda em \texttt{127.0.0.1}.
+\end{itemize}
+
+\subsection{Como o simulador trata as duas pontas}
+
+O engine do aneb-sim escuta em \emph{dois} pares de portas TCP por chip:
+
+\begin{description}[nosep]
+  \item[\texttt{8600 + i} (\textit{flasher port})] usada pelo \texttt{avrdude}. Conectar dispara reset; desconectar dispara um \emph{soft reset} (MCUSR=0) que tira o Optiboot do modo de espera e cai no app recém-gravado.
+  \item[\texttt{8700 + i} (\textit{bridge port})] usada pelo bridge da UI do aneb-sim para encaminhar UART para a porta COM virtual (COM10–COM18 do lado bridge, COM11–COM19 do lado usuário). Não dispara reset; é um assinante passivo.
+\end{description}
+
+Quando o \texttt{avrdude} se conecta na porta de flasher ele \emph{expulsa} o bridge automaticamente. O bridge da UI tem um supervisor que tenta se reconectar 5\,s depois — tempo suficiente para a maioria dos flashes terminar. Após o reconectar, o terminal serial volta a receber dados; abra COM11 (ou a COM da ECU desejada) na aba \textbf{Serial} para acompanhar a saída UART do firmware em execução.
+
+\subsection{Limitações conhecidas}
+
+\begin{itemize}[nosep]
+  \item Apenas uma placa simulada (\texttt{Placa 01 (aneb-sim)}) é exposta atualmente; o simulador modela um único barramento CAN, então a aba \textbf{CAN} é um no-op no modo local.
+  \item Após uma gravação, há uma janela de $\approx$5\,s sem o bridge da UI. Abrir o terminal serial nesse intervalo retorna ``Connection closed'' rapidamente — espere a mensagem \texttt{bridge ecuN: reconnected} no log do aneb-sim antes de retentar.
+  \item O nome do firmware exibido na barra lateral do aneb-sim será \texttt{(uploaded via avrdude)} para flashes vindos do Remote Flasher; o caminho real do arquivo não chega ao engine via STK500.
 \end{itemize}
 
 % === 7. Configuração CAN ==========================================
@@ -1644,7 +1691,7 @@ Os controles da barra de ferramentas (à direita dos botões padrão) permitem m
 
 \begin{dicabox}[Medindo atraso de EMA]
 Para verificar o atraso visível do \texttt{avgSpeed} em relação ao \texttt{speed} (exemplo 14): ative \textbf{Cursors}, posicione o cursor esquerdo no degrau de subida de \texttt{speed} e o direito onde \texttt{avgSpeed} atinge o novo patamar. O painel \textbf{Stats} mostra o Δt diretamente.
-\end{dicabox>
+\end{dicabox}
 
 \subsection{Formato dos dados seriais}
 
