@@ -598,7 +598,9 @@ class LocalCommandWorker(QThread):
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                bufsize=1,
+                # bufsize=1 (line-buffered) is silently ignored in binary
+                # mode on Python 3.12+ and produces a RuntimeWarning;
+                # default buffering + readline gives the same behavior here.
                 creationflags=creationflags,
             )
             assert self._proc.stdout is not None
@@ -678,27 +680,39 @@ class LocalSerialWorker(QThread):
             self.output.emit(f"[Serial] Connected to {self.com_port}")
             buf = b""
             while self._running:
+                # Don't gate on in_waiting — com0com on Windows sometimes
+                # returns 0 from ClearCommError even when bytes are queued
+                # (a known driver quirk), which makes a polled-only loop
+                # silently drop everything.  read(BUFFER) honours the
+                # 0.05 s timeout from Serial.__init__, so this returns
+                # promptly with whatever's available (possibly empty).
                 try:
-                    n = self._serial.in_waiting
+                    chunk = self._serial.read(4096)
                 except (OSError, pyserial.SerialException):
                     break
-                if n:
+                if not chunk:
+                    continue
+                buf += chunk
+                # Emit complete lines as ONE batched signal per read, not
+                # one-emit-per-line.  At full UART speed (≈11 KB/s) the
+                # per-line path produces ~1000 queued signals/sec, which
+                # backs up Qt's event loop so badly that pressing "Close
+                # Serial" doesn't look like it worked: the worker stops
+                # within milliseconds, but the GUI thread spends the next
+                # several seconds draining the backlog of text-append
+                # events, during which clicks feel unresponsive.
+                lines = []
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
                     try:
-                        chunk = self._serial.read(n)
-                    except (OSError, pyserial.SerialException):
-                        break
-                    buf += chunk
-                    while b"\n" in buf:
-                        line, buf = buf.split(b"\n", 1)
-                        try:
-                            text = line.decode("utf-8")
-                        except UnicodeDecodeError:
-                            text = line.decode("cp850", errors="replace")
-                        text = text.rstrip("\r")
-                        if text:
-                            self.output.emit(text)
-                else:
-                    self.msleep(20)
+                        text = line.decode("utf-8")
+                    except UnicodeDecodeError:
+                        text = line.decode("cp850", errors="replace")
+                    text = text.rstrip("\r")
+                    if text:
+                        lines.append(text)
+                if lines:
+                    self.output.emit("\n".join(lines))
             # Flush any trailing partial line
             if buf:
                 try:

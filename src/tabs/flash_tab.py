@@ -308,6 +308,10 @@ class FlashTab(QWidget):
         if not local or not os.path.isfile(local):
             self._log(op, "[Upload] Please select a valid .hex file.")
             return
+        # Local mode: .hex is already on disk — nothing to upload.
+        if pc.get("flash_method") == "local":
+            self._log(op, f"[Upload] Local target — using {local} in place (no copy).")
+            return
         remote = self.remote_folder.text().strip().replace("\\", "/")
         worker = SCPWorker(pc["host"], pc["user"], pc["password"], local, remote)
         worker.output.connect(lambda m, op=op: self._log(op, m))
@@ -325,6 +329,14 @@ class FlashTab(QWidget):
         if not self._preflight(op, "Reset", ports_to_check=[reset_port] if reset_port else []):
             return
         pc = self._get_pc_cfg()
+        # Local mode: aneb-sim's TCP UART server kicks any prior client
+        # and resets the chip whenever a NEW client connects.  We trigger
+        # that by opening and immediately closing a TCP socket to the
+        # selected ECU's UART port.  This kicks off the aneb-sim UI's
+        # bridge — the user will need to restart it from the UI.
+        if pc.get("flash_method") == "local":
+            self._local_reset(op, board)
+            return
         reset_script = board.get("reset_script")
         if reset_script:
             if not reset_port:
@@ -391,10 +403,13 @@ class FlashTab(QWidget):
         Returns True if OK to proceed; False if the user cancelled or a port
         is held by a running serial panel.
         """
+        # Local-mode targets (aneb-sim) don't need the VPN — everything runs
+        # on 127.0.0.1.  Skip the VPN gate for those PCs.
+        is_local = self._get_pc_cfg().get("flash_method") == "local"
         # 1) VPN check — non-blocking (user can proceed if they know better)
         main_window = self.window()
         vpn_tab = getattr(main_window, 'vpn_tab', None)
-        if vpn_tab is not None and not getattr(vpn_tab, '_connected', False):
+        if (not is_local) and vpn_tab is not None and not getattr(vpn_tab, '_connected', False):
             reply = QMessageBox.question(
                 self, "VPN Not Connected",
                 "The VPN appears to be disconnected.\n\n"
@@ -561,23 +576,53 @@ class FlashTab(QWidget):
         self.cancel_btn.setEnabled(True)
         worker.start()
 
+    def _ecu_tcp_port(self, board, ecu_port):
+        """Map an ECU COM port to the simulator's matching TCP UART port.
+        Returns None if the board/port pair has no TCP mapping (which means
+        the entry came from somewhere other than _localhost_simulator)."""
+        ecu_ports = board.get("ecu_ports") or []
+        tcp_ports = board.get("ecu_tcp_ports") or []
+        if ecu_port in ecu_ports and len(tcp_ports) == len(ecu_ports):
+            return tcp_ports[ecu_ports.index(ecu_port)]
+        return None
+
+    def _local_reset(self, op_id, board):
+        """Trigger reset-on-connect on the aneb-sim TCP UART server by
+        opening + immediately closing a fresh socket to the selected ECU.
+        Cheap (≈ a few ms) and synchronous — no worker needed."""
+        import socket
+        ecu_port = self.ecu_combo.currentText()
+        tcp = self._ecu_tcp_port(board, ecu_port)
+        if tcp is None:
+            self._log(op_id, "[Reset] No TCP mapping for this ECU — skipped.")
+            return
+        try:
+            s = socket.create_connection(("127.0.0.1", tcp), timeout=1.0)
+            s.close()
+        except Exception as e:
+            self._log(op_id,
+                      f"[Reset] Could not connect to 127.0.0.1:{tcp}: {e}. "
+                      "Is aneb-sim running?")
+            return
+        self._log(op_id,
+                  f"[Reset] Triggered reset on {ecu_port} via TCP:{tcp}. "
+                  "(Note: this kicks the aneb-sim UI bridge — restart it from "
+                  "the UI when you're done.)")
+
     def _launch_local_flash_worker(self, op_id, pc, ecu_port, hex_name,
                                    board, release_ports):
         """Flash a local target (aneb-sim simulator) directly via avrdude.
 
-        The simulator's TCP UART server triggers a chip reset whenever
-        a client connects to its socket -- so opening the COM port at
-        115 200 baud (which the com0com bridge forwards to the TCP
-        socket) gives us the same DTR-pulse semantics as a real Arduino,
-        no separate reset step needed.
+        We use avrdude's net:host:port transport to talk straight to the
+        simulator's TCP UART server, bypassing com0com entirely.  Opening
+        the TCP socket triggers reset-on-connect on the sim (which kicks
+        any prior client and pulses DTR), so reset and flash happen in a
+        single atomic avrdude session — no separate reset step needed.
 
-        We also need to make sure the aneb-sim UI's pyserial bridge
-        isn't holding the COM port open at the moment we shell out --
-        otherwise avrdude sees 'access denied' on the port.  The user
-        is responsible for clicking 'Pause Bridge' (or just 'Flash
-        through the aneb-sim UI') before launching from here for now;
-        a future improvement could detect the bridge and pause it
-        automatically over the JSON-Lines protocol.
+        Side effect: the aneb-sim UI's bridge gets disconnected when
+        avrdude grabs the TCP socket.  The user must restart bridges
+        from the aneb-sim UI after a flash if they want to keep using
+        Serial / Dashboard panels.
         """
         # The .hex file is local — no SCP needed.  Resolve absolute path
         # so avrdude doesn't get confused by the cwd.
@@ -598,6 +643,15 @@ class FlashTab(QWidget):
             return
         avrdude_conf = _find_avrdude_conf(avrdude)
 
+        # Prefer net: transport so opening the socket triggers the sim's
+        # reset-on-connect.  Fall back to the COM port if no TCP mapping
+        # is configured (defensive — _localhost_simulator always sets one).
+        tcp = self._ecu_tcp_port(board, ecu_port)
+        if tcp is not None:
+            avr_port_arg = f"net:127.0.0.1:{tcp}"
+        else:
+            avr_port_arg = ecu_port
+
         cmd_parts = [f'"{avrdude}"']
         if avrdude_conf:
             cmd_parts += ["-C", f'"{avrdude_conf}"']
@@ -606,7 +660,7 @@ class FlashTab(QWidget):
             "-p", AVRDUDE_DEFAULTS["mcu"],
             "-c", AVRDUDE_DEFAULTS["programmer"],
             "-b", AVRDUDE_DEFAULTS["baudrate"],
-            "-P", ecu_port,
+            "-P", avr_port_arg,
             "-U", f'flash:w:"{hex_path}":i',
         ]
         cmd = " ".join(cmd_parts)
@@ -757,9 +811,16 @@ class FlashTab(QWidget):
         )
 
     def _start_upload(self, op, pc_key, pc, local, ports_to_check):
-        remote = self.remote_folder.text().strip().replace("\\", "/")
         self._log(op, "=== Starting full flash sequence ===")
         held = (pc_key, ports_to_check)
+        # Local mode (aneb-sim): the .hex is already on disk and avrdude
+        # runs locally, so there is nothing to upload.  Skip SCP and go
+        # straight to the flash phase.
+        if pc.get("flash_method") == "local":
+            self._log(op, "[All] Local target — skipping upload.")
+            self._after_upload(True, op, held)
+            return
+        remote = self.remote_folder.text().strip().replace("\\", "/")
         upload_worker = SCPWorker(pc["host"], pc["user"], pc["password"], local, remote)
         upload_worker.output.connect(lambda m, op=op: self._log(op, m))
         upload_worker.finished_signal.connect(

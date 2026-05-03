@@ -14,7 +14,9 @@ import faulthandler
 
 # Enable Python fault handler — dumps a traceback on native crashes
 # (segfaults, aborts) to stderr instead of vanishing silently.
-faulthandler.enable()
+# Guard against --windowed builds where stderr is None.
+if sys.stderr is not None:
+    faulthandler.enable()
 
 
 def _excepthook(exc_type, exc_value, exc_tb):

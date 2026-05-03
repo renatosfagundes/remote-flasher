@@ -21,6 +21,16 @@ from tabs import (
 )
 
 
+def _unavailable_tab(feature):
+    """Placeholder shown when an optional tab's dependencies aren't bundled."""
+    w = QWidget()
+    lbl = QLabel(f"{feature} is not available in this build.\nRun from source to use it.")
+    lbl.setAlignment(Qt.AlignCenter)
+    lbl.setStyleSheet("color: #888; font-size: 13px;")
+    QVBoxLayout(w).addWidget(lbl)
+    return w
+
+
 class CameraPanel(QWidget):
     """Persistent camera side-panel that stays visible across tabs."""
     def __init__(self, parent=None):
@@ -114,8 +124,12 @@ class MainWindow(QMainWindow):
 
         # Dashboard backend (shared by HMI Dashboard + Plots tabs)
         self.dashboard_backend = DashboardBackend()
-        self.gauges_tab = HMIDashboardTab(self.dashboard_backend)
-        self.plotter_tab = PlotterTab()
+        self.gauges_tab = (HMIDashboardTab(self.dashboard_backend)
+                           if HMIDashboardTab is not None
+                           else _unavailable_tab("Dashboard"))
+        self.plotter_tab = (PlotterTab()
+                            if PlotterTab is not None
+                            else _unavailable_tab("Plotter"))
         self._dashboard_source_panel = None
         self._plotter_source_panel = None
 
@@ -221,7 +235,9 @@ class MainWindow(QMainWindow):
             slot = self.dashboard_backend.onSerialLine
         else:  # "plotter"
             attr = "_plotter_source_panel"
-            slot = self.plotter_tab.backend.onSerialLine
+            slot = getattr(getattr(self.plotter_tab, "backend", None), "onSerialLine", None)
+            if slot is None:
+                return
 
         # Disconnect previous source for this target
         prev = getattr(self, attr, None)

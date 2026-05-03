@@ -619,11 +619,10 @@ def _patch_config_oil_library():
     insertion_marker = "LIBRARY mcp_can"
     library_block = textwrap.dedent("""\
 
-    LIBRARY mcp_can {
-      PATH = "avr/arduino/libraries/mcp_can";
-      CPPFILE = "src/mcp_can.cpp";
-      CFILE = "";
-    };
+  LIBRARY mcp_can {
+    PATH    = "avr/arduino/libraries/mcp_can/src";
+    CPPFILE = "mcp_can.cpp";
+  };
     """)
 
     # Insert before the last closing of the file

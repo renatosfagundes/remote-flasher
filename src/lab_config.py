@@ -195,6 +195,15 @@ def _localhost_simulator():
         # better to omit it than expose a half-broken target.
         return None
 
+    # The simulator's UART servers listen on TCP 8600..8604 for ECU1..ECU4
+    # and MCU respectively.  Flashing goes through direct TCP (avrdude
+    # supports `-P net:host:port`) instead of the COM port — opening the
+    # TCP socket triggers reset-on-connect on the sim, which the com0com
+    # path can't because the aneb-sim UI's bridge holds a persistent TCP
+    # connection that masks new-client events.
+    UART_BASE_TCP = 8600
+    ecu_tcp_ports = [UART_BASE_TCP + i for i in range(4)]
+
     return {
         "host": "127.0.0.1",
         "user": "",
@@ -206,11 +215,18 @@ def _localhost_simulator():
         "boards": {
             "Placa 01 (aneb-sim)": {
                 "ecu_ports": ecu_ports,
-                # The simulator resets the chip whenever a TCP/COM
-                # client connects to its UART (DTR-pulse emulation).
-                # No separate Prolific-helper port — point both at the
-                # first ECU port so the existing UI doesn't see None.
-                "reset_port": ecu_ports[0],
+                # Parallel list — ecu_tcp_ports[i] is the simulator's
+                # TCP UART port for ecu_ports[i].  flash_tab uses this
+                # to bypass com0com entirely during avrdude.
+                "ecu_tcp_ports": ecu_tcp_ports,
+                # No separate reset port on the sim — chip reset is
+                # triggered by opening a fresh TCP socket to the chip's
+                # UART server (see flash_tab._local_reset).  Leaving
+                # this None keeps the preflight from locking the wrong
+                # port: a hardcoded value here was previously aliasing
+                # to ecu_ports[0] (COM11) and rejecting flashes of
+                # ECU2/3/4 whenever a serial tab held COM11.
+                "reset_port": None,
                 "reset_script": None,
                 # CAN bus selection is a no-op on the sim (only one
                 # bus today).  Use the MCU port as a placeholder so

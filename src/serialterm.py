@@ -86,7 +86,7 @@ def main():
     sys.stdout.flush()
 
     try:
-        ser = serial.Serial(args.port, args.baudrate, timeout=1)
+        ser = serial.Serial(args.port, args.baudrate, timeout=1, dsrdtr=False, rtscts=False)
     except serial.SerialException as e:
         print(f"ERROR: Could not open {args.port}: {e}", file=sys.stderr)
         sys.exit(1)

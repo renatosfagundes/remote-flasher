@@ -19,31 +19,23 @@ echo Building executable...
     --name "RemoteFlasher_v%VERSION%" ^
     --icon "assets\icon.ico" ^
     --add-data "assets\icon.ico;assets" ^
-    --add-data "src\_version.py;." ^
-    --add-data "src\lab_config.py;." ^
-    --add-data "src\ports_sync.py;." ^
-    --add-data "src\serialterm.py;." ^
-    --add-data "src\settings.py;." ^
-    --add-data "src\workers.py;." ^
-    --add-data "src\widgets.py;." ^
-    --add-data "src\main_window.py;." ^
-    --add-data "src\tabs\__init__.py;tabs" ^
-    --add-data "src\tabs\vpn_tab.py;tabs" ^
-    --add-data "src\tabs\flash_tab.py;tabs" ^
-    --add-data "src\tabs\can_tab.py;tabs" ^
-    --add-data "src\tabs\serial_tab.py;tabs" ^
-    --add-data "src\tabs\ssh_tab.py;tabs" ^
-    --add-data "src\tabs\setup_tab.py;tabs" ^
     --add-data "secrets.py;." ^
+    --add-data "src\serialterm.py;." ^
+    --add-data "setup_environment.py;." ^
     --paths "src" ^
     --hidden-import _version ^
     --hidden-import paramiko ^
     --hidden-import requests ^
+    --hidden-import serial ^
     --hidden-import settings ^
     --hidden-import workers ^
     --hidden-import widgets ^
     --hidden-import main_window ^
+    --hidden-import lab_config ^
     --hidden-import ports_sync ^
+    --hidden-import dashboard_backend ^
+    --hidden-import analog_gauge_widget ^
+    --hidden-import radial_bar ^
     --hidden-import tabs ^
     --hidden-import tabs.vpn_tab ^
     --hidden-import tabs.flash_tab ^
@@ -51,6 +43,15 @@ echo Building executable...
     --hidden-import tabs.serial_tab ^
     --hidden-import tabs.ssh_tab ^
     --hidden-import tabs.setup_tab ^
+    --hidden-import tabs.hmi_tab ^
+    --hidden-import tabs.gauges_tab ^
+    --hidden-import tabs.plotter_tab ^
+    --hidden-import plotter ^
+    --hidden-import plotter.ring_buffer ^
+    --hidden-import plotter.signal_config ^
+    --hidden-import plotter.signal_list_widget ^
+    --hidden-import plotter.plotter_backend ^
+    --hidden-import plotter.plotter_widget ^
     src\main.py
 
 echo.
