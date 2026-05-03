@@ -110,7 +110,7 @@
 % --- Cabeçalho e rodapé ------------------------------------------
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small\color{cinzatexto}Remote Firmware Flasher v2.2.0}
+\fancyhead[L]{\small\color{cinzatexto}Remote Firmware Flasher v2.3.0}
 \fancyhead[R]{\small\color{cinzatexto}Manual do Usuário}
 \fancyfoot[C]{\small\color{cinzatexto}\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -158,8 +158,8 @@
   ]
     \small
     \begin{tabular}{@{}ll@{}}
-      \textbf{Versão}          & 2.0 \\
-      \textbf{Data}            & Março de 2026 \\
+      \textbf{Versão}          & 2.3 \\
+      \textbf{Data}            & Abril de 2026 \\
       \textbf{Repositório}     & \texttt{renatosfagundes/remote-flasher} \\
       \textbf{Plataforma}      & Windows 10/11 \\
     \end{tabular}
@@ -309,23 +309,11 @@ A aba \textbf{VPN} permite conectar-se à rede do laboratório:
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{vpn_disconnected.png}
-  \caption{Aba VPN antes da conexão --- indicador vermelho, campos preenchidos.}
+  \includegraphics[width=\textwidth]{01_vpn_connected.png}
+  \caption{VPN conectada --- indicador verde, log de conexão bem sucedida, painel de Lab Health Check abaixo.}
 \end{figure}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.85\textwidth]{vpn_connected.png}
-  \caption{VPN conectada --- indicador verde, log de conexão bem sucedida.}
-\end{figure}
-
-Ao fechar o aplicativo com a VPN conectada, um diálogo pergunta se deseja desconectar ou manter a conexão ativa:
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.4\textwidth]{vpn_close_dialog.png}
-  \caption{Diálogo exibido ao fechar o aplicativo com VPN ativa.}
-\end{figure}
+Ao fechar o aplicativo com a VPN conectada, um diálogo pergunta se deseja desconectar ou manter a conexão ativa.
 
 \begin{notabox}
 Se a VPN ainda não estiver configurada no Windows, clique em ``Setup VPN Profile'' primeiro.
@@ -346,14 +334,14 @@ A aba \textbf{Flash} permite enviar e gravar firmware nas placas.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{flash_ready.png}
-  \caption{Aba Flash com arquivo selecionado e câmera ao vivo exibindo as placas.}
+  \includegraphics[width=\textwidth]{03_flash_ready.png}
+  \caption{Aba Flash com arquivo \texttt{.hex} selecionado, PC 217 conectado e painel da câmera visível à direita.}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{flash_done.png}
-  \caption{Flash concluído --- saída do avrdude em tempo real com progresso de escrita e verificação.}
+  \includegraphics[width=\textwidth]{04_flash_success.png}
+  \caption{Flash concluído com sucesso --- saída do \texttt{avrdude} com as barras de escrita e verificação em 100\,\%.}
 \end{figure}
 
 \subsection{Sincronizando o mapeamento de portas (v2.2.0)}
@@ -487,14 +475,14 @@ Clique em \textbf{``+ Add Serial''} para adicionar uma nova conexão (máximo 4)
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{serial_1panel.png}
-  \caption{Um painel serial --- saída de tarefas RTOS com Virtual I/O na parte inferior.}
+  \includegraphics[width=\textwidth]{05_serial_single.png}
+  \caption{Um painel serial --- linhas de sinais prefixadas com \texttt{\$} (formato do \texttt{DashboardSignals}), toggles independentes \emph{Feed Dashboard}/\emph{Feed Plotter} e Virtual I/O na parte inferior.}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{serial_2panels.png}
-  \caption{Dois painéis lado a lado --- TX e RX monitorados simultaneamente.}
+  \includegraphics[width=\textwidth]{06_serial_2x2.png}
+  \caption{Grade 2$\times$2 com quatro painéis --- cada placa expõe seu próprio Virtual I/O e seus próprios toggles. No painel superior esquerdo \emph{Feed Dashboard} e \emph{Feed Plotter} estão ativos e dois LEDs virtuais estão acesos.}
 \end{figure}
 
 \subsection{Enviando comandos}
@@ -537,8 +525,8 @@ Os controles ficam ativos somente quando a conexão serial está aberta. Ao desc
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{serial_virtualio.png}
-  \caption{Virtual I/O em ação --- potenciômetros controlando velocidade CAN, LEDs indicando TX/RX.}
+  \includegraphics[width=0.85\textwidth]{07_serial_vio_closeup.png}
+  \caption{Close-up do Virtual I/O --- botões B1--B4, LEDs L1--L4 (L1 aceso em vermelho, L3 em amarelo) e potenciômetros POT1 (620) e POT2 (340).}
 \end{figure}
 
 Para utilizar o Virtual I/O no firmware, inclua a biblioteca \texttt{VirtualIO.h} (disponível em \texttt{arduino\_lib/VirtualIO/}). Veja a Seção~\ref{sec:virtualio} para detalhes do protocolo e exemplos.
@@ -554,8 +542,8 @@ Digite um comando e pressione Enter. A saída é exibida no log.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{ssh_terminal.png}
-  \caption{Terminal SSH --- listagem de diretório remoto com seção de upload SFTP acima.}
+  \includegraphics[width=\textwidth]{16_ssh_terminal.png}
+  \caption{Terminal SSH --- listagem de diretório remoto (\texttt{dir}) com seção de upload SFTP acima.}
 \end{figure}
 
 \begin{notabox}
@@ -584,6 +572,12 @@ A transferência usa SFTP (via paramiko) e cria diretórios remotos automaticame
 
 O painel de câmera exibe o feed MJPEG do laboratório. É visível nas abas Flash, Serial e SSH, podendo ser oculto/exibido pelo botão no canto da barra de abas. Com múltiplas conexões serial, a câmera reduz automaticamente para 25\% da largura.
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{cameras.png}
+  \caption{Feed de câmera ao vivo do laboratório --- permite confirmar visualmente o estado das placas e LEDs durante operações de flash e depuração serial.}
+\end{figure}
+
 % === 10. Integração com IDEs ====================================
 \section{Integração com Notepad++}
 
@@ -591,7 +585,7 @@ A aba \textbf{Setup} contém guias completas de integração. Abaixo está um re
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{setup_allgreen.png}
+  \includegraphics[width=\textwidth]{17_setup.png}
   \caption{Aba Setup --- todos os componentes instalados (verde) e guia do Notepad++ à direita.}
 \end{figure}
 
@@ -1636,6 +1630,24 @@ O Remote Flasher inclui um painel automotivo interativo com três modos de exibi
   \item \textbf{Combustão Manual}: Tacômetro + velocímetro, diagrama H do câmbio, indicador de marcha, gauges laterais
 \end{itemize}
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{08_dashboard_electric.png}
+  \caption{Modo \textbf{Elétrico} --- velocímetro central a 72\,km/h, bateria em 68\,\% (RadialBar), barra +39\,kW de potência e bloco direito com autonomia/odômetro/velocidade média.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{09_dashboard_auto.png}
+  \caption{Modo \textbf{Combustão Automático} --- tacômetro e velocímetro lado a lado, gauges de temperatura/combustível, seletor P/R/N/D ativo.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{10_dashboard_manual.png}
+  \caption{Modo \textbf{Combustão Manual} --- diagrama H do câmbio à esquerda com a marcha atual destacada, tacômetro no centro e velocímetro à direita.}
+\end{figure}
+
 Todos os modos incluem:
 \begin{itemize}[nosep]
   \item \textbf{Luzes de aviso}: motor, óleo, bateria, freio, ABS, airbag (desenhadas em Canvas)
@@ -1659,10 +1671,28 @@ Todos os modos incluem:
 Apenas uma conexão serial pode alimentar o Dashboard por vez. Ao marcar ``Feed Dashboard'' em um painel, qualquer outro painel que estava alimentando é desconectado automaticamente.
 \end{notabox}
 
+\begin{notabox}[Taxa de transmissão vs.\ câmera]
+Nas bancadas do laboratório, os adaptadores FTDI das placas e a webcam BRIO normalmente compartilham o mesmo controlador USB do PC. Cada transmissão serial contínua em alta taxa satura o hub USB o suficiente para que o pipeline Media Foundation da câmera cancele frames (\texttt{MF\_E\_OPERATION\_CANCELLED}, \texttt{-2147483638}); após alguns ciclos de Open/Close a câmera pode entrar em \texttt{ERROR\_GEN\_FAILURE} (\texttt{0x8007001F}), o que só é recuperável com replug físico do cabo USB.
+
+\textbf{Recomendação:} mantenha \texttt{dashFlush()} em \textbf{{$\leq$} 5\,Hz} (um envio a cada 200\,ms) quando usar Dashboard ou Plotter com a câmera ligada. Todos os exemplos de 09 a 16 no repositório já foram ajustados para 5\,Hz; ao derivar um firmware próprio, mantenha o \texttt{CYCLETIME} $\geq 200$\,ms. Correção de longo prazo: mover o cabo USB da BRIO para uma porta em outro controlador raiz.
+\end{notabox}
+
 
 \section{Plotter Serial --- Gráficos em Tempo Real}
 
 A aba \textbf{Plotter} exibe gráficos de todos os sinais recebidos via serial em tempo real, com renderização GPU a 30\,fps via \texttt{pyqtgraph}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{11_plotter_empty.png}
+  \caption{Aba \textbf{Plotter} aguardando dados --- barra de ferramentas completa (janela, Pause, Export, Clear, Cursors, Auto-Y, Reset View, Stats e indicador de Hz à direita).}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{12_plotter_3signals.png}
+  \caption{Três sinais sendo plotados (\texttt{speed}, \texttt{rpm}, \texttt{coolantTemp}). Eixo X rola continuamente em janela de 10\,s.}
+\end{figure}
 
 \subsection{Funcionalidades}
 
@@ -1677,6 +1707,12 @@ A aba \textbf{Plotter} exibe gráficos de todos os sinais recebidos via serial e
   \item \textbf{Zoom/Pan}: scroll do mouse para zoom, arrastar para pan
 \end{itemize}
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{13_plotter_8signals_autohide.png}
+  \caption{Oito sinais detectados; apenas os cinco primeiros estão com \emph{checkbox} marcado, os três últimos (\texttt{throttle}, \texttt{steering}, \texttt{brakeForce}) estão ocultos. A legenda mostra apenas as curvas visíveis.}
+\end{figure}
+
 \subsection{Controles de medição (v2.3.0)}
 
 Os controles da barra de ferramentas (à direita dos botões padrão) permitem medir transientes e trechos específicos do sinal sem pausar a aquisição:
@@ -1685,13 +1721,25 @@ Os controles da barra de ferramentas (à direita dos botões padrão) permitem m
   \item \textbf{Cursors}: ativa um par de cursores arrastáveis que \emph{acompanham} a janela rolante (são armazenados como ``N segundos atrás da borda viva''). Use para medir, por exemplo, a constante de tempo de uma EMA ou o intervalo entre eventos.
   \item \textbf{Auto-Y}: ajusta o eixo Y uma única vez aos dados atualmente visíveis. Útil quando um sinal fica fora do intervalo após mudar de escala.
   \item \textbf{Reset View}: retoma a rolagem do X e refaz o Auto-Y.
-  \item \textbf{Stats}: alterna o painel lateral de estatísticas. Quando \textbf{Cursors} está desligado, mostra min/máx/média/desvio/Δ da janela visível; quando está ligado, mostra os mesmos valores calculados \emph{entre os cursores} junto com o Δt.
+  \item \textbf{Stats}: alterna o painel lateral de estatísticas. Quando \textbf{Cursors} está desligado, mostra min/máx/média/desvio/$\Delta$ da janela visível; quando está ligado, mostra os mesmos valores calculados \emph{entre os cursores} junto com o $\Delta t$.
   \item \textbf{Indicador de taxa (Hz)}: à direita da barra. Mostra a taxa efetiva de amostragem (amostras/segundo na janela dos últimos 2\,s), útil para verificar se o firmware está atingindo o período da task.
 \end{itemize}
 
 \begin{dicabox}[Medindo atraso de EMA]
-Para verificar o atraso visível do \texttt{avgSpeed} em relação ao \texttt{speed} (exemplo 14): ative \textbf{Cursors}, posicione o cursor esquerdo no degrau de subida de \texttt{speed} e o direito onde \texttt{avgSpeed} atinge o novo patamar. O painel \textbf{Stats} mostra o Δt diretamente.
+Para verificar o atraso visível do \texttt{avgSpeed} em relação ao \texttt{speed} (exemplo 14): ative \textbf{Cursors}, posicione o cursor esquerdo no degrau de subida de \texttt{speed} e o direito onde \texttt{avgSpeed} atinge o novo patamar. O painel \textbf{Stats} mostra o $\Delta t$ diretamente.
 \end{dicabox}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{14_plotter_cursors.png}
+  \caption{Par de cursores arrastáveis acompanhando a janela rolante. Os cursores são mantidos como ``N segundos atrás da borda viva'', de modo que o intervalo medido permanece estável enquanto o X continua rolando.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{15_plotter_stats.png}
+  \caption{Painel \textbf{Stats} lateral com min/máx/média/desvio/$\Delta$ calculados entre cursores ($\Delta t$ = 5,000\,s). Cada linha de sinal usa a cor da respectiva curva para cross-reference imediato.}
+\end{figure}
 
 \subsection{Formato dos dados seriais}
 
@@ -1807,6 +1855,12 @@ A aba \textbf{VPN} inclui um painel de diagnóstico que verifica remotamente o s
 
 Após conectar a VPN, clique em \textbf{``Run Health Check''}. O sistema faz SSH em cada PC e executa o script \texttt{test\_ttl.ps1} para verificar os controladores das placas.
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{02_vpn_health_check.png}
+  \caption{Health Check executado --- grid com status por placa/PC e status da câmera (PC~217). Verde = OK, vermelho = controlador travado, laranja = SSH inacessível.}
+\end{figure}
+
 \textbf{Legenda do grid:}
 \begin{itemize}[nosep]
   \item \textcolor{green!70!black}{Verde (OK)}: controlador respondendo normalmente
@@ -1825,33 +1879,9 @@ Na pasta \texttt{remote\_scripts/} estão dois scripts para instalar nos PCs:
 powershell -ExecutionPolicy Bypass -File setup\_sshd\_watchdog.ps1
 \end{codigobox}
 
-\textbf{Camera Autostart} (\texttt{setup\_camera\_autostart.ps1}): inicia o servidor de câmera automaticamente no logon do PC~217.
-\begin{codigobox}
-powershell -ExecutionPolicy Bypass -File setup\_camera\_autostart.ps1
-\end{codigobox}
-
-
-\section{Sincronização de Portas COM (Port Lock)}
-
-Quando múltiplos usuários usam o Remote Flasher simultaneamente, o sistema de \textbf{lock de portas} evita que dois usuários abram a mesma porta COM.
-
-\subsection{Como funciona}
-
-\begin{enumerate}[nosep]
-  \item Ao abrir uma conexão serial, o app cria um arquivo de lock no PC remoto (ex.: \texttt{C:\textbackslash 2026\textbackslash locks\textbackslash COM25.lock})
-  \item O arquivo contém o nome do usuário, máquina e timestamp
-  \item Outros usuários veem a porta como \textbf{indisponível} no dropdown (``in use by renato'')
-  \item Ao fechar a conexão, o lock é removido automaticamente
-\end{enumerate}
-
-\subsection{Proteção contra falhas}
-
-\begin{itemize}[nosep]
-  \item \textbf{Heartbeat}: a cada 60 segundos, o timestamp do lock é atualizado
-  \item \textbf{Expiração automática}: locks com mais de 12 minutos sem atualização são removidos (protege contra crashes ou desconexões)
-  \item \textbf{Idle timeout}: conexões seriais sem dados por 10 minutos são fechadas automaticamente
-  \item \textbf{Polling}: o app verifica o estado dos locks a cada 60 segundos (apenas quando a VPN está conectada)
-\end{itemize}
+\begin{notabox}
+O \textit{Port Lock} baseado em SFTP e o \textit{Camera Autostart} foram removidos na v2.3. A descoberta de portas em uso passou a ser feita por varredura local rápida (\texttt{scan\_ports.py}); não há mais arquivos de lock remotos nem serviços agendados para a câmera.
+\end{notabox}
 
 
 \end{document}

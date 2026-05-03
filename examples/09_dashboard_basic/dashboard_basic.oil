@@ -1,4 +1,9 @@
-// Example 09: Dashboard Basic — speed + RPM at 20 Hz
+// Example 09: Dashboard Basic — speed + RPM at 5 Hz
+//
+// Rate kept at 5 Hz (200 ms) deliberately: when the lab camera shares a
+// USB hub with the FTDI adapter, higher transmit rates saturate the
+// hub and eventually knock the BRIO into ERROR_GEN_FAILURE. See the
+// "Serial transmit rate vs. camera" note in README / manual.
 OIL_VERSION = "2.5" : "dashboard_basic";
 
 CPU test {
@@ -26,8 +31,8 @@ CPU test {
     COUNTER = SystemCounter;
     ACTION = ACTIVATETASK { TASK = SendDashboard; };
     AUTOSTART = TRUE {
-      ALARMTIME = 50;
-      CYCLETIME = 50;
+      ALARMTIME = 200;
+      CYCLETIME = 200;
       APPMODE = stdAppmode;
     };
   };

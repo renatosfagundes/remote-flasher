@@ -12,11 +12,40 @@ import logging
 import traceback
 import faulthandler
 
+# PyInstaller --windowed mode has no attached console, so sys.stdout and
+# sys.stderr come through as None. Any code path that writes to them
+# (faulthandler.enable(), print(..., file=sys.stderr) in our excepthooks)
+# crashes on startup with "sys.stderr is None". Redirect both to a log
+# file under %APPDATA%\RemoteFlasher so crash info is preserved and every
+# write() call still has a real file to land on.
+_LOG_STREAM = None
+if sys.stderr is None or sys.stdout is None:
+    try:
+        _log_dir = os.path.join(
+            os.environ.get("APPDATA", os.path.expanduser("~")),
+            "RemoteFlasher",
+        )
+        os.makedirs(_log_dir, exist_ok=True)
+        _LOG_STREAM = open(
+            os.path.join(_log_dir, "runtime.log"),
+            "a", encoding="utf-8", buffering=1,
+        )
+    except Exception:
+        # Last-resort: an always-writable sink so nothing AttributeErrors.
+        import io
+        _LOG_STREAM = io.StringIO()
+    if sys.stdout is None:
+        sys.stdout = _LOG_STREAM
+    if sys.stderr is None:
+        sys.stderr = _LOG_STREAM
+
 # Enable Python fault handler — dumps a traceback on native crashes
-# (segfaults, aborts) to stderr instead of vanishing silently.
-# Guard against --windowed builds where stderr is None.
-if sys.stderr is not None:
-    faulthandler.enable()
+# (segfaults, aborts) to stderr instead of vanishing silently. Pass our
+# resolved stream explicitly in case a downstream module re-nulls stderr.
+try:
+    faulthandler.enable(file=sys.stderr)
+except Exception:
+    pass
 
 
 def _excepthook(exc_type, exc_value, exc_tb):

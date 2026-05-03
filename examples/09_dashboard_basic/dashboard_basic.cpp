@@ -24,7 +24,7 @@ void setup() {
 }
 
 TASK(SendDashboard) {
-    t += 0.05;
+    t += 0.2;  // 200 ms per tick (5 Hz)
 
     float speed = 100.0 + 100.0 * sin(t * 0.5);
     float rpm   = 4000.0 + 3000.0 * sin(t * 0.8);

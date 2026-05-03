@@ -27,7 +27,7 @@ void setup() {
 }
 
 TASK(SendGauges) {
-    t += 0.05;
+    t += 0.2;  // 200 ms per tick (5 Hz)
 
     // Speed: sine wave 0-200
     float speed = 100.0 + 100.0 * sin(t * 0.5);

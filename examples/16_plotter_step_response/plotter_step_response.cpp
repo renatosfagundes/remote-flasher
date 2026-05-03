@@ -21,16 +21,16 @@
 #include "DashboardSignals.h"
 #include <math.h>
 
-static const float DT_SEC = 0.05f;  // 20 Hz — matches stepAlarm CYCLETIME
+static const float DT_SEC = 0.2f;  // 5 Hz (200 ms) — matches stepAlarm CYCLETIME
 
 // Square wave: 3 s low, 3 s high, 0 → 1 amplitude.
 static const float STEP_PERIOD_SEC = 6.0f;
 
 // EMA coefficients chosen so the effective τ sits far apart on the
-// plot. Values and their resulting τ at DT_SEC = 0.05 s:
-//   α = 0.22 → τ ≈ 0.20 s
-//   α = 0.10 → τ ≈ 0.47 s
-//   α = 0.03 → τ ≈ 1.64 s
+// plot. Values and their resulting τ at DT_SEC = 0.2 s:
+//   α = 0.22 → τ ≈ 0.71 s
+//   α = 0.10 → τ ≈ 1.80 s
+//   α = 0.03 → τ ≈ 6.47 s
 static const float ALPHA_FAST = 0.22f;
 static const float ALPHA_MED  = 0.10f;
 static const float ALPHA_SLOW = 0.03f;

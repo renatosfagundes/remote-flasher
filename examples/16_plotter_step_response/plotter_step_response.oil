@@ -1,4 +1,7 @@
-// Example 16: Plotter Step Response — 20 Hz
+// Example 16: Plotter Step Response — 5 Hz
+//
+// Rate capped at 5 Hz (200 ms) so the lab camera survives — see README
+// / manual "Serial transmit rate vs. camera".
 OIL_VERSION = "2.5" : "plotter_step_response";
 
 CPU test {
@@ -26,8 +29,8 @@ CPU test {
     COUNTER = SystemCounter;
     ACTION = ACTIVATETASK { TASK = SendStep; };
     AUTOSTART = TRUE {
-      ALARMTIME = 50;
-      CYCLETIME = 50;
+      ALARMTIME = 200;
+      CYCLETIME = 200;
       APPMODE = stdAppmode;
     };
   };

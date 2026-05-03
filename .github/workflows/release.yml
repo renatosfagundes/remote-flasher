@@ -1,0 +1,110 @@
+name: Build and Release
+
+# Trigger on version tag pushes (e.g. `git tag v2.3.1 && git push --tags`)
+# and on manual invocation from the Actions tab.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag for the manual build (e.g. v2.3.1). Only used when running manually.'
+        required: true
+        default: 'v0.0.0-manual'
+
+permissions:
+  contents: write   # needed for softprops/action-gh-release to create the release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          # Strip the leading `v` from the tag (or from the manual-input tag)
+          # so we can write it to the VERSION file and use it in filenames.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # Keep the in-repo VERSION file in sync with the tag so the exe
+          # produced by build_exe.bat is named RemoteFlasher_v${VERSION}.exe
+          # consistently with the tag.
+          echo -n "${VERSION}" > VERSION
+          echo "Building VERSION=${VERSION} from tag=${TAG}"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Write secrets.py from repository secret
+        shell: bash
+        env:
+          SECRETS_PY: ${{ secrets.SECRETS_PY }}
+        run: |
+          if [ -z "$SECRETS_PY" ]; then
+            echo "ERROR: the SECRETS_PY repository secret is not set."
+            echo "Create it in Settings -> Secrets and variables -> Actions,"
+            echo "containing the full contents of src/secrets.py."
+            exit 1
+          fi
+          printf '%s' "$SECRETS_PY" > secrets.py
+          # Sanity check — we don't log the content, only line count.
+          echo "secrets.py written ($(wc -l < secrets.py) lines)"
+
+      - name: Build executable
+        shell: cmd
+        run: |
+          set PYTHON=python
+          call build_exe.bat
+
+      - name: Verify build outputs
+        shell: bash
+        run: |
+          EXE="dist/RemoteFlasher_v${{ steps.version.outputs.version }}.exe"
+          PDF="docs/manual.pdf"
+          if [ ! -f "$EXE" ]; then
+            echo "ERROR: expected $EXE but it was not produced."
+            ls -la dist/ || true
+            exit 1
+          fi
+          if [ ! -f "$PDF" ]; then
+            echo "ERROR: $PDF missing — commit docs/manual.pdf before tagging."
+            exit 1
+          fi
+          echo "Executable: $(du -h "$EXE" | cut -f1)"
+          echo "Manual:     $(du -h "$PDF" | cut -f1)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Remote Flasher ${{ steps.version.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/RemoteFlasher_v${{ steps.version.outputs.version }}.exe
+            docs/manual.pdf
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

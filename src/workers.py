@@ -449,22 +449,69 @@ class SerialWorker(QThread):
                 password=self.password,
                 timeout=15,
             )
-            # Use full path to run serialterm.py — avoids cd issues over SSH.
-            # The "if not exist" must be wrapped in cmd /c to prevent it from
-            # swallowing subsequent commands when the file already exists.
-            # Master semantics — ONE SSH session, no SFTP, no retries.
+            # Ensure serialterm.py exists in the user's remote dir. We run this
+            # as its OWN short-lived exec on a throwaway channel — NOT chained
+            # with the python launch below via `&`.
+            #
+            # Why not chain:
+            #   cmd /c "ensure" & python -u serialterm.py ...
+            # looks tidy but it's the exact pattern that leaks the COM port:
+            # when we call channel.shutdown_write() on Close, the SSH EOF
+            # goes to the outer cmd.exe. cmd.exe has already handed control
+            # to python, and the EOF does NOT reliably reach python.exe's
+            # stdin handle (observed: cmd.exe swallows the EOF until its
+            # own &-script finishes, even though it finished long ago — an
+            # OpenSSH-on-Windows quirk). Result: python's sys.stdin.read(1)
+            # in serialterm.py's writer thread blocks forever, ser.close()
+            # never runs, COM port stays held, next Open Serial fails with
+            # "Acesso negado". The remote serialterm.py's own comment
+            # specifically warns about this chaining pattern.
+            #
+            # With a dedicated channel for just `python -u serialterm.py ...`,
+            # shutdown_write lands directly on python's stdin, the writer
+            # thread unblocks on EOF, main exits, ser.close() runs, port
+            # is released — so the NEXT open is clean.
             remote_script = f"{self.remote_dir}\\serialterm.py"
-            cmd = (
+            ensure_cmd = (
                 f"cmd /c \"if not exist {remote_script}"
                 f" (mkdir {self.remote_dir} >nul 2>&1"
                 f" ^& copy {REMOTE_BASE_DIR}\\serialterm.py {remote_script} >nul 2>&1)\""
-                f" & python -u {remote_script} --port {self.com_port} --baudrate {self.baudrate}"
+            )
+            self.output.emit(f"[Serial] Ensuring: {ensure_cmd}")
+            ensure_ch = self._client.get_transport().open_session()
+            ensure_ch.exec_command(ensure_cmd)
+            # Short bounded wait for the copy; it's I/O-only, completes fast.
+            _t = time.time()
+            while not ensure_ch.exit_status_ready() and (time.time() - _t) < 5:
+                time.sleep(0.05)
+            try:
+                ensure_ch.close()
+            except Exception:
+                pass
+
+            cmd = (
+                f"python -u {remote_script}"
+                f" --port {self.com_port} --baudrate {self.baudrate}"
             )
             self.output.emit(f"[Serial] Running: {cmd}")
             self._channel = self._client.get_transport().open_session()
             # No PTY — use python -u for unbuffered output instead.
             # PTY echoes back stdin which corrupts VirtualIO commands.
             self._channel.exec_command(cmd)
+            # Prime the remote python's stdin with a single newline. Windows
+            # OpenSSH wraps every exec_command in `cmd.exe /c <cmd>`, and
+            # observed behavior is that cmd.exe's stdin handle hits EOF at
+            # startup on second-and-later SSH sessions — causing
+            # serialterm's writer thread (sys.stdin.read(1)) to unblock with
+            # '' immediately → main exits → "Connected to COMxx... Reading"
+            # then instant close. Writing a harmless "\n" here puts a byte
+            # in the pipe so read(1) returns that byte instead of EOF; the
+            # writer sees "\n" as a no-op (flushes an empty buf) and keeps
+            # running. Real user commands flow normally afterward.
+            try:
+                self._channel.send(b"\n")
+            except Exception:
+                pass
             while self._running:
                 if self._channel.recv_ready():
                     data = self._channel.recv(4096).decode("utf-8", errors="replace")
@@ -525,20 +572,27 @@ class SerialWorker(QThread):
     def stop(self):
         self._running = False
         if self._channel:
-            # Signal the remote python to shut down cleanly so the COM port
-            # is released. Three-step sequence, because Windows OpenSSH
-            # wraps our exec_command in `cmd.exe /c "..."` and we have to
-            # reach the grandchild python reliably:
-            #   1. Send Ctrl-C as a best-effort hint (ignored without a PTY,
-            #      but harmless).
-            #   2. shutdown_write() sends SSH_MSG_CHANNEL_EOF — sshd-session
-            #      closes the write end of cmd's stdin pipe, which cmd
-            #      inherits to python. python's sys.stdin.read() unblocks
-            #      with '' and the writer thread exits → main exits →
-            #      ser.close() → COM released. This is the reliable path.
-            #   3. close() tears down the channel on our side.
+            # Cooperative shutdown — NEVER force-kill the remote python.
+            # A Force kill (Stop-Process -Force / taskkill /F) doesn't run
+            # Python's finally block, so ser.close() never fires, the FTDI
+            # driver's USB endpoint doesn't cleanly release, and the next
+            # cycle disturbs the USB bus enough to break the camera
+            # (ERROR_GEN_FAILURE 0x8007001F on the BRIO).
+            #
+            # Sequence:
+            #   1. __RF_QUIT__\n marker — if the writer thread is alive,
+            #      it recognizes this and triggers clean shutdown (sets
+            #      _stop, cancel_read on serial, wakes reader).
+            #   2. shutdown_write — SSH EOF; breaks writer's stdin read if
+            #      it's still blocked.
+            #   3. channel.close — breaks stdout on the remote, the reader
+            #      thread's next flush raises OSError and exits → main's
+            #      while-reader-alive loop exits → finally block runs →
+            #      ser.close() runs → FTDI releases cleanly.
+            # Any of the three is sufficient; all three together cover every
+            # path without ever abruptly terminating the process.
             try:
-                self._channel.send(b"\x03")
+                self._channel.send(b"__RF_QUIT__\n")
             except Exception:
                 pass
             try:
